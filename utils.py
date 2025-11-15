@@ -1,13 +1,12 @@
-import csv
 import datetime
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Set, Tuple, List
+from typing import Any, Dict, Optional, Sequence
 from urllib.parse import urljoin, urlparse, urlunparse, urlencode, parse_qsl
 from bs4 import BeautifulSoup
 import httpx
-
+from config import BASE_URL, LOGGER 
 
 def setup_daily_file_logger(
     log_dir: str = "logs",
@@ -42,7 +41,7 @@ def setup_daily_file_logger(
     return log_path
 
 
-from config import BASE_URL, LOGGER  # noqa: E402
+
 
 
 # 解析cookie部分
@@ -87,58 +86,6 @@ def find_next_url(html: str):
     return urljoin(BASE_URL, a["href"]) if a and a.has_attr("href") else None
 
 
-# 写入actors.csv
-def write_actors_csv(rows: Iterable[Mapping[str, Any]], csv_path: str) -> None:
-    """
-    将演员数据写入 CSV 文件，列为 actor_name 与 href；若目录不存在则自动创建。
-    若文件存在，则追加内容并仅在文件为空时写入表头；已存在的行会跳过。
-    """
-    target = Path(csv_path)
-    if target.parent and not target.parent.exists():
-        target.parent.mkdir(parents=True, exist_ok=True)
-
-    existing_entries: Set[Tuple[str, str]] = set()
-    batch_seen: Set[Tuple[str, str]] = set()
-    file_exists = target.exists()
-    file_empty = True
-    if file_exists:
-        file_empty = target.stat().st_size == 0
-        if not file_empty:
-            with target.open("r", encoding="utf-8-sig", newline="") as fp:
-                reader = csv.reader(fp)
-                next(reader, None)  # 丢弃表头
-                for row in reader:
-                    if len(row) >= 2:
-                        existing_entries.add((row[0], row[1]))
-
-    rows_to_write: List[Tuple[str, str]] = []
-    for row in rows:
-        if not isinstance(row, Mapping):
-            continue
-        raw_name = row.get("actor_name") or row.get("name") or row.get("strong") or ""
-        name = raw_name.strip() if isinstance(raw_name, str) else str(raw_name).strip()
-        href_val = row.get("href") or ""
-        href = href_val.strip() if isinstance(href_val, str) else str(href_val).strip()
-        if not name:
-            continue
-        entry = (name, href)
-        if entry in existing_entries or entry in batch_seen:
-            continue
-        batch_seen.add(entry)
-        rows_to_write.append(entry)
-
-    if not rows_to_write:
-        return
-
-    with target.open("a", encoding="utf-8-sig", newline="") as fp:
-        writer = csv.writer(fp)
-        if file_empty:
-            writer.writerow(["actor_name", "href"])
-            file_empty = False
-        writer.writerows(rows_to_write)
-        existing_entries.update(batch_seen)
-
-
 def sanitize_filename(value: str, default: str = "file") -> str:
     """
     将任意字符串转换为适合文件名的形式。
@@ -146,24 +93,6 @@ def sanitize_filename(value: str, default: str = "file") -> str:
     safe = "".join("_" if ch in '\\/:*?"<>|' else ch for ch in value)
     safe = safe.strip().strip("_")
     return safe or default
-
-
-def load_actor_urls(csv_path: str) -> List[Tuple[str, str]]:
-    """
-    从 CSV 中载入演员名称与链接，兼容 actor_name/name 与 href/url 字段。
-    """
-    actors: List[Tuple[str, str]] = []
-    try:
-        with open(csv_path, "r", encoding="utf-8-sig", newline="") as fp:
-            reader = csv.DictReader(fp)
-            for row in reader:
-                name = (row.get("actor_name") or row.get("name") or "").strip()
-                href = (row.get("href") or row.get("url") or "").strip()
-                if name and href:
-                    actors.append((name, href))
-    except FileNotFoundError:
-        LOGGER.error("未找到演员列表文件：%s", csv_path)
-    return actors
 
 
 def build_actor_url(
@@ -189,4 +118,3 @@ def build_actor_url(
 
     query = urlencode(query_items, doseq=True)
     return urlunparse(parsed._replace(query=query))
-
