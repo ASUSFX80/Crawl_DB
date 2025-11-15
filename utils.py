@@ -166,55 +166,6 @@ def load_actor_urls(csv_path: str) -> List[Tuple[str, str]]:
     return actors
 
 
-# 写入{actor_name}_workname.csv
-def write_actor_works_csv(
-    actor_name: str, works: Iterable[Mapping[str, Any]], output_dir: str
-) -> Path:
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    filename = (
-        out_dir / f"{sanitize_filename(str(actor_name), default='actor')}_workname.csv"
-    )
-
-    existing_entries: List[Tuple[str, str]] = []
-    existing_set: Set[Tuple[str, str]] = set()
-    if filename.exists():
-        with filename.open("r", encoding="utf-8-sig", newline="") as fp:
-            reader = csv.DictReader(fp)
-            for row in reader:
-                code = (row.get("code") or "").strip()
-                href = (row.get("href") or "").strip()
-                if code and href:
-                    entry = (code, href)
-                    if entry not in existing_set:
-                        existing_entries.append(entry)
-                        existing_set.add(entry)
-
-    new_entries: List[Tuple[str, str]] = []
-    for work in works:
-        if not isinstance(work, Mapping):
-            continue
-        code = (work.get("code") or "").strip()
-        href = (work.get("href") or "").strip()
-        if not code or not href:
-            continue
-        entry = (code, href)
-        if entry in existing_set:
-            continue
-        existing_set.add(entry)
-        new_entries.append(entry)
-
-    if not existing_entries and not new_entries:
-        return filename
-
-    with filename.open("w", encoding="utf-8-sig", newline="") as fp:
-        writer = csv.writer(fp)
-        writer.writerow(["code", "href"])
-        for entry in existing_entries + new_entries:
-            writer.writerow(list(entry))
-    return filename
-
-
 def build_actor_url(
     base_url: str, href: str, tags: Sequence[str], sort_type: Optional[str]
 ) -> str:
@@ -238,52 +189,6 @@ def build_actor_url(
 
     query = urlencode(query_items, doseq=True)
     return urlunparse(parsed._replace(query=query))
-
-
-def read_works_csv(
-    csv_path: str, base_url: Optional[str] = None
-) -> List[Dict[str, str]]:
-    """
-    读取作品 CSV，返回包含 code、href 的列表。
-    """
-    path = Path(csv_path)
-    if not path.exists():
-        LOGGER.error("未找到文件：%s", csv_path)
-        return []
-
-    rows: List[Dict[str, str]] = []
-    with path.open("r", encoding="utf-8-sig") as fp:
-        reader = csv.DictReader(fp)
-        for row in reader:
-            code = (row.get("code") or "").strip()
-            href = (row.get("href") or "").strip()
-            if not code or not href:
-                continue
-            if href.startswith("/") and base_url:
-                href = urljoin(base_url, href)
-            rows.append({"code": code, "href": href})
-    return rows
-
-
-def read_all_works(
-    folder: str, pattern: str = "*_workname.csv", base_url: Optional[str] = None
-) -> Dict[str, List[Dict[str, str]]]:
-    """
-    读取目录下匹配 pattern 的作品 CSV。
-    """
-    works_dir = Path(folder)
-    if not works_dir.exists() or not works_dir.is_dir():
-        LOGGER.error("未找到目录：%s", folder)
-        return {}
-
-    collected: Dict[str, List[Dict[str, str]]] = {}
-    for csv_file in sorted(works_dir.glob(pattern)):
-        rows = read_works_csv(csv_file, base_url=base_url)
-        if rows:
-            collected[csv_file.stem] = rows
-        else:
-            LOGGER.warning("%s 没有有效的作品链接，跳过。", csv_file)
-    return collected
 
 
 def write_magnets_csv(

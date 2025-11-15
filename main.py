@@ -9,9 +9,9 @@ import mdcx_magnets
 from storage import Storage
 
 
-def prepare_environment(db_path: str, works_dir: str, magnets_dir: str) -> None:
+def prepare_environment(db_path: str, magnets_dir: str) -> None:
     """
-    初始化运行所需的目录与数据库结构。
+    初始化运行所需的数据库结构与磁链目录。
     """
     db_file = Path(db_path)
     if db_file.parent:
@@ -20,7 +20,6 @@ def prepare_environment(db_path: str, works_dir: str, magnets_dir: str) -> None:
     with Storage(db_file) as _:
         pass
 
-    Path(works_dir).mkdir(parents=True, exist_ok=True)
     Path(magnets_dir).mkdir(parents=True, exist_ok=True)
 
 
@@ -33,11 +32,6 @@ def main():
         "--db-path",
         default="userdata/actors.db",
         help="SQLite 数据库文件路径，默认 userdata/actors.db。",
-    )
-    parser.add_argument(
-        "--works-dir",
-        default="userdata/works",
-        help="（已废弃）仅为兼容旧配置保留，将被忽略。",
     )
     parser.add_argument(
         "--magnets-dir",
@@ -57,7 +51,7 @@ def main():
     parser.add_argument("--skip-magnets", action="store_true", help="跳过磁链抓取步骤")
     args = parser.parse_args()
 
-    prepare_environment(args.db_path, args.works_dir, args.magnets_dir)
+    prepare_environment(args.db_path, args.magnets_dir)
 
     if not args.skip_collect:
         run_collect_actors(cookie_json=args.cookie, db_path=args.db_path)
@@ -69,7 +63,6 @@ def main():
             db_path=args.db_path,
             tags=args.tags,
             sort_type=args.sort_type,
-            output_dir=args.works_dir,
             cookie_json=args.cookie,
         )
     else:
@@ -77,7 +70,6 @@ def main():
 
     if not args.skip_magnets:
         run_magnet_jobs(
-            works_path=args.works_dir,
             out_root=args.magnets_dir,
             cookie_json=args.cookie,
             db_path=args.db_path,

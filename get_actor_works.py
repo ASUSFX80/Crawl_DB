@@ -94,7 +94,6 @@ def run_actor_works(
     db_path: str = "userdata/actors.db",
     tags: Optional[Sequence[str] | str] = None,
     sort_type: Optional[str] = None,
-    output_dir: str = "userdata/works",
     cookie_json: str = "cookie.json",
 ):
     """
@@ -154,11 +153,6 @@ if __name__ == "__main__":
         "--sort-type", help="作品排序方式，对应 sort_type 参数，例如 0", default=None
     )
     parser.add_argument(
-        "--output-dir",
-        default="userdata/works",
-        help="作品 CSV 输出目录（保留兼容，实际数据保存在数据库文件中），默认 userdata/works",
-    )
-    parser.add_argument(
         "--cookie", default="cookie.json", help="Cookie JSON 路径，默认 cookie.json"
     )
     args = parser.parse_args()
@@ -167,6 +161,5 @@ if __name__ == "__main__":
         db_path=args.db_path,
         tags=args.tags,
         sort_type=args.sort_type,
-        output_dir=args.output_dir,
         cookie_json=args.cookie,
     )
