@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from time import perf_counter
@@ -917,6 +918,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 def main() -> int:
+    if getattr(sys, "frozen", False):
+        base_dir = Path.home() / ".crawljav"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        os.chdir(base_dir)
     app = QtWidgets.QApplication(sys.argv)
     window = MainWindow()
     window.show()
