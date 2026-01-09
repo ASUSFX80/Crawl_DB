@@ -189,6 +189,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._log_emitter.message.connect(self._append_log)
         self._load_flow_settings()
         self._load_defaults()
+        self._ensure_default_db()
 
     def _build_ui(self) -> None:
         root = QtWidgets.QWidget()
@@ -603,7 +604,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cookie_input.setText(cookie)
         self.db_input.setText(db_path)
         self.output_input.setText(output_dir)
+        self._ensure_default_db()
         QtWidgets.QMessageBox.information(self, "完成", "默认设置已保存。")
+
+    def _ensure_default_db(self) -> None:
+        db_path = Path(self.db_input.text().strip() or "userdata/actors.db")
+        if db_path.exists():
+            return
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with Storage(db_path):
+                pass
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("初始化数据库失败: %s", exc)
 
     def _start_flow(self) -> None:
         if self._is_thread_running():
