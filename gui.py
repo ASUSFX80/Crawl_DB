@@ -7,6 +7,11 @@ import sys
 from pathlib import Path
 from time import perf_counter
 
+if getattr(sys, "frozen", False):
+    _base_dir = Path.home() / ".crawljav"
+    _base_dir.mkdir(parents=True, exist_ok=True)
+    os.chdir(_base_dir)
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 import mdcx_magnets
@@ -918,10 +923,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 def main() -> int:
-    if getattr(sys, "frozen", False):
-        base_dir = Path.home() / ".crawljav"
-        base_dir.mkdir(parents=True, exist_ok=True)
-        os.chdir(base_dir)
     app = QtWidgets.QApplication(sys.argv)
     window = MainWindow()
     window.show()
