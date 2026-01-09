@@ -8,7 +8,34 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 import httpx
 from bs4 import BeautifulSoup
 
-from config import BASE_URL, LOGGER
+
+class CancelledError(RuntimeError):
+    pass
+
+
+_cancel_checker = None
+
+
+def set_cancel_checker(checker) -> None:
+    global _cancel_checker
+    _cancel_checker = checker
+
+
+def _check_cancel() -> None:
+    if _cancel_checker and _cancel_checker():
+        raise CancelledError("操作已取消")
+
+
+def _get_logger():
+    from config import LOGGER
+
+    return LOGGER
+
+
+def _get_base_url() -> str:
+    from config import BASE_URL
+
+    return BASE_URL
 
 def setup_daily_file_logger(
     log_dir: str = "logs",
@@ -97,7 +124,9 @@ def log_cookie_staleness(cookie_json_path: str, warn_days: int = 3) -> None:
     except OSError:
         return
     if age_days >= warn_days:
-        LOGGER.warning("Cookie 文件已超过 %d 天未更新，可能已过期：%s", warn_days, cookie_json_path)
+        _get_logger().warning(
+            "Cookie 文件已超过 %d 天未更新，可能已过期：%s", warn_days, cookie_json_path
+        )
 
 
 def is_cookie_valid(cookies: Dict[str, Any]) -> bool:
@@ -110,12 +139,13 @@ def is_cookie_valid(cookies: Dict[str, Any]) -> bool:
     required = ("cf_clearance", "_jdb_session", "over18")
     missing = [k for k in required if not cookies.get(k)]
     if missing:
-        LOGGER.warning("❌Cookie 无效!")
+        _get_logger().warning("❌Cookie 无效!")
         return False
     return True
 
 
 def fetch_html(client: httpx.Client, url: str) -> str:
+    _check_cancel()
     r = client.get(url)
     # with open("debug.html", "w", encoding="utf-8") as f:
     #     f.write(r.text)
@@ -126,7 +156,8 @@ def find_next_url(html: str):
     soup = BeautifulSoup(html, "lxml")
     # “下一頁”按钮
     a = soup.find("a", string=lambda s: s and "下一頁" in s)
-    return urljoin(BASE_URL, a["href"]) if a and a.has_attr("href") else None
+    base_url = _get_base_url()
+    return urljoin(base_url, a["href"]) if a and a.has_attr("href") else None
 
 
 # --- 抓取过程记录工具 -------------------------------------------------
@@ -137,7 +168,7 @@ def _read_json(path: Path, default: Dict[str, Any]) -> Dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        LOGGER.warning("解析历史文件失败，将重置：%s", path)
+        _get_logger().warning("解析历史文件失败，将重置：%s", path)
         return dict(default)
 
 
