@@ -32,14 +32,14 @@ jobs:
       - name: Build app (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
-          pyinstaller --noconfirm --clean --windowed --name crawljav gui.py
+          pyinstaller --noconfirm --clean --windowed --add-data "schema.sql:." --name crawljav gui.py
           rm -f dist/crawljav-macos.dmg
           hdiutil create -volname crawljav -srcfolder dist/crawljav.app -ov -format UDZO dist/crawljav-macos.dmg
 
       - name: Build app (Windows)
         if: startsWith(matrix.os, 'windows')
         run: |
-          pyinstaller --noconfirm --clean --windowed --onefile --name crawljav gui.py
+          pyinstaller --noconfirm --clean --windowed --onefile --add-data "schema.sql;." --name crawljav gui.py
           powershell -Command "Compress-Archive -Path dist\\crawljav.exe -DestinationPath dist\\crawljav-windows.zip"
 
       - name: Upload release assets

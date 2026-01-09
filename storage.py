@@ -3,9 +3,24 @@ from __future__ import annotations
 import sqlite3
 from contextlib import AbstractContextManager
 from pathlib import Path
+import sys
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
-SCHEMA_FILE = Path(__file__).with_name("schema.sql")
+def _resolve_schema_file() -> Path:
+    candidates = [
+        Path(__file__).with_name("schema.sql"),
+        Path.cwd() / "schema.sql",
+    ]
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        candidates.append(Path(base) / "schema.sql")
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
+
+
+SCHEMA_FILE = _resolve_schema_file()
 
 
 def _normalize_actor_record(record: Mapping[str, object]) -> Optional[Tuple[str, str]]:
