@@ -1,0 +1,49 @@
+name: Build and रिलीज
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install PyQt5
+
+      - name: Build app (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          pyinstaller --noconfirm --clean --windowed --name crawljav gui.py
+          hdiutil create -volname crawljav -srcfolder dist/crawljav.app dist/crawljav-macos.dmg
+
+      - name: Build app (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: |
+          pyinstaller --noconfirm --clean --windowed --name crawljav gui.py
+          powershell -Command "Compress-Archive -Path dist\\crawljav.exe -DestinationPath dist\\crawljav-windows.zip"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/crawljav-macos.dmg
+            dist/crawljav-windows.zip
