@@ -33,7 +33,8 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           pyinstaller --noconfirm --clean --windowed --name crawljav gui.py
-          hdiutil create -volname crawljav -srcfolder dist/crawljav.app dist/crawljav-macos.dmg
+          rm -f dist/crawljav-macos.dmg
+          hdiutil create -volname crawljav -srcfolder dist/crawljav.app -ov -format UDZO dist/crawljav-macos.dmg
 
       - name: Build app (Windows)
         if: startsWith(matrix.os, 'windows')
