@@ -33,8 +33,17 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           pyinstaller --noconfirm --clean --windowed --add-data "schema.sql:." --name crawljav gui.py
+          npm install -g create-dmg
           rm -f dist/crawljav-macos.dmg
-          hdiutil create -volname crawljav -srcfolder dist/crawljav.app -ov -format UDZO dist/crawljav-macos.dmg
+          create-dmg \
+            --volname "crawljav" \
+            --window-pos 200 120 \
+            --window-size 660 400 \
+            --icon-size 120 \
+            --icon "crawljav.app" 160 200 \
+            --app-drop-link 500 200 \
+            "dist/crawljav-macos.dmg" \
+            "dist"
 
       - name: Build app (Windows)
         if: startsWith(matrix.os, 'windows')
