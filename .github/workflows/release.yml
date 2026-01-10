@@ -33,7 +33,7 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           pyinstaller --noconfirm --clean --windowed --add-data "schema.sql:." --name crawljav gui.py
-          npm install -g create-dmg
+          brew install create-dmg
           rm -f dist/crawljav-macos.dmg
           create-dmg \
             --volname "crawljav" \
