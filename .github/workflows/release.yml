@@ -40,15 +40,15 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          from urllib.request import urlopen
           from PIL import Image
 
-          icon_url = "https://jav.app/img/logo.5a6a7422.png"
+          source_icon = Path("logo.png")
+          if not source_icon.exists():
+              raise SystemExit("logo.png not found in repo root")
           asset_dir = Path("build_assets")
           asset_dir.mkdir(parents=True, exist_ok=True)
           png_path = asset_dir / "icon.png"
-          with urlopen(icon_url) as resp:
-              png_path.write_bytes(resp.read())
+          png_path.write_bytes(source_icon.read_bytes())
 
           img = Image.open(png_path).convert("RGBA")
           iconset = asset_dir / "icon.iconset"
@@ -68,15 +68,15 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          from urllib.request import urlopen
           from PIL import Image
 
-          icon_url = "https://jav.app/img/logo.5a6a7422.png"
+          source_icon = Path("logo.png")
+          if not source_icon.exists():
+              raise SystemExit("logo.png not found in repo root")
           asset_dir = Path("build_assets")
           asset_dir.mkdir(parents=True, exist_ok=True)
           png_path = asset_dir / "icon.png"
-          with urlopen(icon_url) as resp:
-              png_path.write_bytes(resp.read())
+          png_path.write_bytes(source_icon.read_bytes())
 
           img = Image.open(png_path).convert("RGBA")
           sizes = [16, 32, 48, 64, 128, 256]
