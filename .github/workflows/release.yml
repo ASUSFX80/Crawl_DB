@@ -65,6 +65,7 @@ jobs:
 
       - name: Prepare icon (Windows)
         if: startsWith(matrix.os, 'windows')
+        shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
