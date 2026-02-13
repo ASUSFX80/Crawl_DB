@@ -1,0 +1,2 @@
+-r requirements-common.txt
+# 预留 macOS 平台专用依赖（当前无增量）

@@ -1,20 +1,29 @@
 # get_actor_works.py
 import argparse
-import time
 import random
-from typing import Sequence, Optional
+from typing import Any, Optional, Sequence
 from urllib.parse import urljoin
-from bs4 import BeautifulSoup
-from config import BASE_URL, build_client, LOGGER
+
+from config import BASE_URL, LOGGER
+from fetch_runtime import (
+    FetchConfig,
+    add_fetch_mode_arguments,
+    create_fetcher,
+    fetch_config_from_args,
+    log_fetch_diagnostics,
+    normalize_fetch_config,
+)
 from utils import (
-    load_cookie_dict,
     build_actor_url,
-    find_next_url,
-    fetch_html,
-    load_checkpoint,
-    save_checkpoint,
+    build_soup,
     clear_checkpoint,
+    ensure_not_cancelled,
+    find_next_url,
+    load_checkpoint,
+    load_cookie_dict,
     record_history,
+    save_checkpoint,
+    sleep_with_cancel,
 )
 from storage import Storage
 
@@ -27,7 +36,7 @@ def parse_works(html: str):
       番号：a > div.video-title > strong
       标题：a > div.video-title (全部文本)
     """
-    soup = BeautifulSoup(html, "lxml")
+    soup = build_soup(html)
     movie_grid = soup.select_one(
         "body > section > div > div.movie-list.h.cols-4.vcols-8"
     )
@@ -63,26 +72,48 @@ def crawl_actor_works(
     start_url: str,
     cookie_json: str = "cookie.json",
     known_codes: Optional[set[str]] = None,
+    fetch_config: FetchConfig | dict[str, Any] | None = None,
 ):
     """
     从单个演员的作品页（可带筛选参数）开始抓取，保留筛选并自动翻页，返回完整作品列表。
     """
     known_codes = known_codes or set()
-    cookies = load_cookie_dict(cookie_json)
-    if not cookies:
-        LOGGER.error("未能从 cookie.json 解析到有效 Cookie。")
-        return []
+    resolved_fetch_config = normalize_fetch_config(fetch_config)
+    cookies: dict[str, Any] = {}
+    if resolved_fetch_config.mode == "httpx":
+        cookies = load_cookie_dict(cookie_json)
+        if not cookies:
+            LOGGER.error("未能从 cookie.json 解析到有效 Cookie。")
+            return []
+    else:
+        try:
+            cookies = load_cookie_dict(cookie_json)
+        except SystemExit as exc:
+            LOGGER.warning("浏览器模式未加载 Cookie，将优先使用持久化会话：%s", exc)
+            cookies = {}
 
-    for must in ("over18", "cf_clearance", "_jdb_session"):
-        if must not in cookies:
-            LOGGER.warning("Cookie 缺少 %s，可能会遇到拦截。", must)
+    if resolved_fetch_config.mode == "httpx" or cookies:
+        for must in ("over18", "cf_clearance", "_jdb_session"):
+            if must not in cookies:
+                LOGGER.warning("Cookie 缺少 %s，可能会遇到拦截。", must)
 
     rows, page, url = [], 1, start_url
-    with build_client(cookies) as client:
+    with create_fetcher(cookies, resolved_fetch_config) as fetcher:
         LOGGER.info("开始抓取演员作品：%s", start_url)
         while url:
+            ensure_not_cancelled()
             LOGGER.info("抓取第 %d 页: %s", page, url)
-            html = fetch_html(client, url)
+            result = fetcher.fetch(
+                url,
+                expected_selector="div.movie-list",
+                stage="actor_works",
+            )
+            log_fetch_diagnostics(resolved_fetch_config.mode, result)
+            html = result.html
+            if result.blocked:
+                raise RuntimeError(
+                    f"检测到疑似拦截页（status={result.status_code}, title={result.title}, reason={result.blocked_reason}）"
+                )
             works = parse_works(html)
             LOGGER.info("[page %d] 解析到作品 %d 条", page, len(works))
             hit_known = False
@@ -99,7 +130,7 @@ def crawl_actor_works(
             if nxt and nxt != url:
                 url = nxt
                 page += 1
-                time.sleep(random.uniform(0.8, 1.6))
+                sleep_with_cancel(random.uniform(0.8, 1.6))
             else:
                 url = None
     LOGGER.info("抓取演员作品完成，共 %d 条。", len(rows))
@@ -111,6 +142,7 @@ def run_actor_works(
     tags: Optional[Sequence[str] | str] = None,
     cookie_json: str = "cookie.json",
     actor_name: Optional[Sequence[str] | str] = None,
+    fetch_config: FetchConfig | dict[str, Any] | None = None,
 ):
     """
     批量读取演员列表，抓取作品并写入指定的 SQLite 数据库文件。
@@ -161,6 +193,7 @@ def run_actor_works(
                 )
 
         for i, (actor_name, href) in enumerate(actors[start_index:], start=start_index):
+            ensure_not_cancelled()
             existing_codes = {w["code"] for w in store.get_actor_works(actor_name)}
             start_url = build_actor_url(BASE_URL, href, tags_list)
             LOGGER.info("开始处理演员：%s", actor_name)
@@ -171,6 +204,7 @@ def run_actor_works(
                 start_url=start_url,
                 cookie_json=cookie_json,
                 known_codes=existing_codes,
+                fetch_config=fetch_config,
             )
             saved = store.save_actor_works(actor_name, href, works)
             LOGGER.info(
@@ -196,6 +230,7 @@ def run_actor_works(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="抓取演员作品并写入 SQLite 数据库")
+    add_fetch_mode_arguments(parser)
     parser.add_argument(
         "--db",
         dest="db_path",
@@ -209,7 +244,11 @@ if __name__ == "__main__":
         "--cookie", default="cookie.json", help="Cookie JSON 路径，默认 cookie.json"
     )
     parser.add_argument(
-        "--actor_name", help="仅抓取指定演员，可逗号分隔多名，不填则抓取全部。", default=None
+        "--actor-name",
+        "--actor_name",
+        dest="actor_name",
+        help="仅抓取指定演员，可逗号分隔多名，不填则抓取全部（推荐 --actor-name）。",
+        default=None,
     )
     args = parser.parse_args()
 
@@ -218,4 +257,5 @@ if __name__ == "__main__":
         tags=args.tags,
         cookie_json=args.cookie,
         actor_name=args.actor_name,
+        fetch_config=fetch_config_from_args(args),
     )

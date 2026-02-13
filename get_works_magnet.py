@@ -1,17 +1,26 @@
 # get_works_magnet.py
 import argparse
-import time
 import random
-from typing import List, Dict, Any, Optional, Sequence
-from bs4 import BeautifulSoup
-from config import BASE_URL, build_client, LOGGER
+from typing import Any, Dict, List, Optional, Sequence
+
+from config import LOGGER
+from fetch_runtime import (
+    FetchConfig,
+    add_fetch_mode_arguments,
+    create_fetcher,
+    fetch_config_from_args,
+    log_fetch_diagnostics,
+    normalize_fetch_config,
+)
+from utils import build_soup
 from utils import (
-    load_cookie_dict,
-    fetch_html,
-    load_checkpoint,
-    save_checkpoint,
     clear_checkpoint,
+    ensure_not_cancelled,
+    load_checkpoint,
+    load_cookie_dict,
     record_history,
+    save_checkpoint,
+    sleep_with_cancel,
 )
 from storage import Storage
 
@@ -22,7 +31,7 @@ def parse_magnets(html: str) -> List[Dict[str, Any]]:
       选择器：#magnets-content > div > div.magnet-name.column.is-four-fifths a[href]
       标签信息位于同一个 a 标签内的 div/span 结构。
     """
-    soup = BeautifulSoup(html, "lxml")
+    soup = build_soup(html)
     magnets: List[Dict[str, Any]] = []
     root = soup.select_one("#magnets-content")
     if not root:
@@ -86,10 +95,104 @@ def parse_magnets(html: str) -> List[Dict[str, Any]]:
     return deduped
 
 
-def crawl_magnets_for_row(client, code: str, href: str):
-    html = fetch_html(client, href)
+def crawl_magnets_for_row(fetcher, code: str, href: str, *, fetch_mode: str):
+    result = fetcher.fetch(
+        href,
+        expected_selector="#magnets-content",
+        stage="magnets",
+    )
+    log_fetch_diagnostics(fetch_mode, result)
+    if result.blocked:
+        raise RuntimeError(
+            f"检测到疑似拦截页（status={result.status_code}, title={result.title}, reason={result.blocked_reason}）"
+        )
+    html = result.html
     magnets = parse_magnets(html)
     return magnets
+
+
+def _normalize_filters(value: Optional[Sequence[str] | str]) -> list[str]:
+    if value is None:
+        return []
+
+    raw_items: list[str] = []
+    if isinstance(value, str):
+        raw_items = value.replace("，", ",").split(",")
+    else:
+        for item in value:
+            raw_items.extend(str(item).replace("，", ",").split(","))
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        normalized = item.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+def _filter_works_by_code_keywords(
+    works: list[dict[str, Any]], keywords: Sequence[str]
+) -> list[dict[str, Any]]:
+    if not keywords:
+        return works
+    keyword_set = [keyword.upper() for keyword in keywords if keyword]
+    if not keyword_set:
+        return works
+    filtered: list[dict[str, Any]] = []
+    for work in works:
+        code = str(work.get("code", "")).upper()
+        if any(keyword in code for keyword in keyword_set):
+            filtered.append(work)
+    return filtered
+
+
+def _filter_works_by_series_prefixes(
+    works: list[dict[str, Any]], prefixes: Sequence[str]
+) -> list[dict[str, Any]]:
+    if not prefixes:
+        return works
+    prefix_set = [prefix.upper() for prefix in prefixes if prefix]
+    if not prefix_set:
+        return works
+    filtered: list[dict[str, Any]] = []
+    for work in works:
+        code = str(work.get("code", "")).upper()
+        if any(code.startswith(prefix) for prefix in prefix_set):
+            filtered.append(work)
+    return filtered
+
+
+def _apply_work_filters(
+    all_works: dict[str, list[dict[str, Any]]],
+    *,
+    actor_filters: list[str],
+    code_keywords: list[str],
+    series_prefixes: list[str],
+) -> dict[str, list[dict[str, Any]]]:
+    if actor_filters:
+        return {
+            name: all_works[name]
+            for name in actor_filters
+            if name in all_works and all_works[name]
+        }
+    if code_keywords:
+        filtered: dict[str, list[dict[str, Any]]] = {}
+        for actor, works in all_works.items():
+            matched = _filter_works_by_code_keywords(works, code_keywords)
+            if matched:
+                filtered[actor] = matched
+        return filtered
+    if series_prefixes:
+        filtered = {}
+        for actor, works in all_works.items():
+            matched = _filter_works_by_series_prefixes(works, series_prefixes)
+            if matched:
+                filtered[actor] = matched
+        return filtered
+    return all_works
 
 
 def run_magnet_jobs(
@@ -97,17 +200,31 @@ def run_magnet_jobs(
     cookie_json: str = "cookie.json",
     db_path: str = "userdata/actors.db",
     actor_name: Optional[Sequence[str] | str] = None,
+    code_keywords: Optional[Sequence[str] | str] = None,
+    series_prefixes: Optional[Sequence[str] | str] = None,
+    fetch_config: FetchConfig | dict[str, Any] | None = None,
 ):
     """
     遍历数据库中的作品，抓取磁链并存入 SQLite 数据库文件。
     """
-    cookies = load_cookie_dict(cookie_json)
-    if not cookies:
-        LOGGER.error("未能从 cookie.json 解析到有效 Cookie。")
-        return {}
-    for must in ("over18", "cf_clearance", "_jdb_session"):
-        if must not in cookies:
-            LOGGER.warning("Cookie 缺少 %s，可能会遇到拦截。", must)
+    resolved_fetch_config = normalize_fetch_config(fetch_config)
+    cookies: dict[str, Any] = {}
+    if resolved_fetch_config.mode == "httpx":
+        cookies = load_cookie_dict(cookie_json)
+        if not cookies:
+            LOGGER.error("未能从 cookie.json 解析到有效 Cookie。")
+            return {}
+    else:
+        try:
+            cookies = load_cookie_dict(cookie_json)
+        except SystemExit as exc:
+            LOGGER.warning("浏览器模式未加载 Cookie，将优先使用持久化会话：%s", exc)
+            cookies = {}
+
+    if resolved_fetch_config.mode == "httpx" or cookies:
+        for must in ("over18", "cf_clearance", "_jdb_session"):
+            if must not in cookies:
+                LOGGER.warning("Cookie 缺少 %s，可能会遇到拦截。", must)
 
     if out_root != "userdata/magnets":
         LOGGER.debug("out_root 参数仅用于 TXT 导出，与数据库写入无关：%s", out_root)
@@ -118,23 +235,40 @@ def run_magnet_jobs(
             LOGGER.warning("数据库中未找到作品数据，请先执行作品抓取。")
             return {}
 
-        actor_filters: list[str] = []
-        if actor_name is not None:
-            if isinstance(actor_name, str):
-                actor_filters = [n.strip() for n in actor_name.split(",") if n.strip()]
-            else:
-                actor_filters = [str(n).strip() for n in actor_name if str(n).strip()]
+        actor_filters = _normalize_filters(actor_name)
+        code_filters = _normalize_filters(code_keywords)
+        series_filters = _normalize_filters(series_prefixes)
+        has_scope_filter = bool(actor_filters or code_filters or series_filters)
+
+        filtered_works = _apply_work_filters(
+            all_works,
+            actor_filters=actor_filters,
+            code_keywords=code_filters,
+            series_prefixes=series_filters,
+        )
 
         if actor_filters:
-            filtered = {name: all_works[name] for name in actor_filters if name in all_works}
             missing = [name for name in actor_filters if name not in all_works]
-            if not filtered:
+            if not filtered_works:
                 LOGGER.warning("未找到指定演员：%s", ", ".join(actor_filters))
                 return {}
             if missing:
                 LOGGER.warning("部分演员未找到，将跳过：%s", ", ".join(missing))
-            all_works = filtered
-            LOGGER.info("仅抓取指定演员：%s", ", ".join(all_works.keys()))
+            LOGGER.info("仅抓取指定演员：%s", ", ".join(filtered_works.keys()))
+        elif code_filters:
+            if not filtered_works:
+                LOGGER.warning("未匹配到任何番号关键词：%s", ", ".join(code_filters))
+                return {}
+            LOGGER.info("启用番号筛选（contains）：%s", ", ".join(code_filters))
+        elif series_filters:
+            if not filtered_works:
+                LOGGER.warning("未匹配到任何系列前缀：%s", ", ".join(series_filters))
+                return {}
+            LOGGER.info("启用系列筛选（prefix）：%s", ", ".join(series_filters))
+
+        all_works = filtered_works
+
+        if has_scope_filter:
             resume_actor = None
             resume_index = 0
         else:
@@ -149,10 +283,11 @@ def run_magnet_jobs(
                 )
 
         summary = {}
-        with build_client(cookies) as client:
+        with create_fetcher(cookies, resolved_fetch_config) as fetcher:
             actor_items = sorted(all_works.items(), key=lambda kv: kv[0].lower())
             resume_mode = bool(resume_actor)
             for actor_name, works in actor_items:
+                ensure_not_cancelled()
                 if resume_mode and actor_name != resume_actor:
                     continue
                 resume_mode = False
@@ -161,10 +296,16 @@ def run_magnet_jobs(
                 magnet_counts = []
                 start_index = resume_index if actor_name == resume_actor else 0
                 for i, work in enumerate(works[start_index:], start=start_index):
+                    ensure_not_cancelled()
                     code, href = work["code"], work["href"]
                     LOGGER.info("[%d/%d] %s -> %s", i + 1, len(works), code, href)
                     try:
-                        magnets = crawl_magnets_for_row(client, code, href)
+                        magnets = crawl_magnets_for_row(
+                            fetcher,
+                            code,
+                            href,
+                            fetch_mode=resolved_fetch_config.mode,
+                        )
                         if not magnets:
                             LOGGER.warning("%s 未解析到磁力。", code)
                         saved = store.save_magnets(
@@ -182,7 +323,9 @@ def run_magnet_jobs(
                             len(magnets),
                         )
                         magnet_counts.append(saved)
-                        time.sleep(random.uniform(0.8, 1.6))
+                        sleep_with_cancel(random.uniform(0.8, 1.6))
+                    except RuntimeError:
+                        raise
                     except Exception as e:
                         LOGGER.exception("%s 抓取失败：%s", code, e)
                     save_checkpoint(
@@ -207,6 +350,7 @@ def run_magnet_jobs(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="根据数据库中的作品抓取磁链并写入 SQLite 数据库")
+    add_fetch_mode_arguments(parser)
     parser.add_argument(
         "--output-dir",
         default="userdata/magnets",
@@ -222,9 +366,10 @@ if __name__ == "__main__":
         help="SQLite 数据库文件路径，默认 userdata/actors.db",
     )
     parser.add_argument(
+        "--actor-name",
         "--actor_name",
         dest="actor_name",
-        help="只抓取指定演员，可用逗号分隔多个（默认抓取全部）。",
+        help="只抓取指定演员，可用逗号分隔多个（默认抓取全部，推荐 --actor-name）。",
         default=None,
     )
     args = parser.parse_args()
@@ -234,4 +379,5 @@ if __name__ == "__main__":
         cookie_json=args.cookie,
         db_path=args.db_path,
         actor_name=args.actor_name,
+        fetch_config=fetch_config_from_args(args),
     )

@@ -5,6 +5,13 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 env:
   APP_NAME: crawljav
   PYTHON_VERSION: "3.11"
@@ -13,12 +20,22 @@ env:
 
 jobs:
   build:
-    name: Build ${{ matrix.os }}
+    name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        include:
+          - os: macos-14
+            target: macos-arm64
+            requirements_file: requirements-mac.txt
+            data_sep: ":"
+            package_ext: dmg
+          - os: windows-2022
+            target: windows-x64
+            requirements_file: requirements-win.txt
+            data_sep: ";"
+            package_ext: zip
 
     steps:
       - name: Checkout
@@ -32,8 +49,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install PyQt5 PyInstaller Pillow
+          python -m pip install -r "${{ matrix.requirements_file }}"
+          python -m pip install PyInstaller Pillow
 
       - name: Prepare icon (macOS)
         if: startsWith(matrix.os, 'macos')
@@ -88,9 +105,9 @@ jobs:
       - name: Build app (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
-          python -m PyInstaller --noconfirm --clean --windowed --icon build_assets/icon.icns --add-data "${{ env.SCHEMA_FILE }}:." --name "${{ env.APP_NAME }}" gui.py
+          python -m PyInstaller --noconfirm --clean --windowed --icon build_assets/icon.icns --collect-all playwright --add-data "${{ env.SCHEMA_FILE }}${{ matrix.data_sep }}." --name "${{ env.APP_NAME }}" gui.py
           brew install create-dmg
-          rm -f "dist/${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-macos.dmg"
+          rm -f "dist/${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.target }}.dmg"
           rm -rf dist/dmg
           mkdir -p dist/dmg
           cp -R "dist/${{ env.APP_NAME }}.app" dist/dmg/
@@ -101,19 +118,40 @@ jobs:
             --icon-size 120 \
             --icon "${{ env.APP_NAME }}.app" 160 200 \
             --app-drop-link 500 200 \
-            "dist/${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-macos.dmg" \
+            "dist/${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.target }}.dmg" \
             "dist/dmg"
 
       - name: Build app (Windows)
         if: startsWith(matrix.os, 'windows')
         run: |
           $ErrorActionPreference = "Stop"
-          python -m PyInstaller --noconfirm --clean --windowed --onefile --icon build_assets/icon.ico --add-data "${{ env.SCHEMA_FILE }};." --name "${{ env.APP_NAME }}" gui.py
-          powershell -Command "Compress-Archive -Path dist\\${{ env.APP_NAME }}.exe -DestinationPath dist\\${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-windows.zip"
+          python -m PyInstaller --noconfirm --clean --windowed --onefile --icon build_assets/icon.ico --collect-all playwright --add-data "${{ env.SCHEMA_FILE }}${{ matrix.data_sep }}." --name "${{ env.APP_NAME }}" gui.py
+          powershell -Command "Compress-Archive -Path dist\\${{ env.APP_NAME }}.exe -DestinationPath dist\\${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.target }}.zip"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-${{ matrix.target }}
+          path: dist/${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.target }}.${{ matrix.package_ext }}
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-macos.dmg
-            dist/${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-windows.zip
+            dist/${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-macos-arm64.dmg
+            dist/${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-windows-x64.zip

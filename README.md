@@ -1,123 +1,283 @@
-## crawljav 使用说明
+# crawljav 使用说明
 
-抓取收藏演员、作品列表与磁链数据，写入 SQLite；支持全流程、分步执行或 GUI 操作。
+抓取 JavDB 收藏对象、作品与磁链数据，支持：
 
-### 快速开始
+- 命令行全流程执行
+- 分阶段抓取
+- GUI 可视化运行与数据浏览
+
+---
+
+## 一、功能概览
+
+- 全流程抓取：收藏 -> 作品 -> 磁链 -> 磁链筛选
+- 收藏维度扩展：`actor / series / maker / director / code`
+- 双抓取模式：`httpx` 与 `browser`（Playwright 持久化会话）
+- GUI 支持：
+  - 作品多选批量导出磁链
+  - 右键复制（番号/标题/磁链）
+  - 番号/标题编辑并写回数据库
+- 本地 SQLite 存储，支持断点续跑和历史记录
+
+---
+
+## 二、快速开始
+
+### 1. 安装依赖
+
+推荐使用 `uv`：
 
 ```bash
 uv sync
+```
+
+如果使用 `pip`，可按平台安装：
+
+```bash
+# macOS
+pip install -r requirements-mac.txt
+
+# Windows
+pip install -r requirements-win.txt
+
+# 兼容入口（自动包含通用依赖）
+pip install -r requirements.txt
+```
+
+### 2. 准备 Cookie
+
+在项目根目录创建 `cookie.json`，示例：
+
+```json
+{
+  "cookie": "over18=1; cf_clearance=xxx; _jdb_session=yyy"
+}
+```
+
+### 3. 初始化并运行
+
+```bash
 uv run python main.py
 ```
 
-如果你更偏好图形界面：
+---
 
-```bash
-uv run python gui.py
-```
+## 三、运行方式
 
-### 环境准备
-
-1. 安装依赖（推荐使用 [uv](https://github.com/astral-sh/uv)）：
-   ```bash
-   uv sync
-   ```
-2. 准备 `cookie.json`，内容示例：
-   ```json
-   {
-     "cookie": "over18=1; cf_clearance=xxx; _jdb_session=yyy"
-   }
-   ```
-3. 数据库初始化：首次运行 `main.py` 会自动创建 `userdata/actors.db` 并执行 `schema.sql`。
-
-### 全流程（一键）
+### 1. 一键全流程
 
 ```bash
 uv run python main.py \
-  --tags s,d \
+  --tags s,d
 ```
 
-可用 `--tags` 筛选，`--skip-collect/works/magnets` 跳过阶段。
+常见开关：
 
-### GUI 运行
+- `--skip-collect`
+- `--skip-works`
+- `--skip-magnets`
+- `--collect-scope actor|series|maker|director|code`
 
-`gui.py` 集成了流程控制、日志、数据浏览与 Cookie 校验。
+浏览器模式示例：
+
+```bash
+uv run python main.py \
+  --fetch-mode browser \
+  --browser-user-data-dir userdata/browser_profile/javdb \
+  --challenge-timeout-seconds 240
+```
+
+非演员维度示例：
+
+```bash
+uv run python main.py \
+  --collect-scope series \
+  --fetch-mode browser
+```
+
+### 2. GUI 运行
 
 ```bash
 uv run python gui.py
 ```
 
-### 分步运行
+GUI 流程页支持收藏维度切换；数据浏览页支持搜索、排序、筛选、批量导出、右键复制和作品编辑。
 
-#### 1. 抓取收藏演员列表
+---
+
+## 四、分步命令
+
+### 1. 收藏抓取
 
 ```bash
 uv run python get_collect_actors.py
 ```
 
-写入 `actors` 表。
+调试响应落盘与对比：
 
-#### 演员作品
+```bash
+uv run python get_collect_actors.py \
+  --response-dump-path debug/collection_actors_runtime.html \
+  --compare-with-path debug/collection_actors.html
+```
+
+抓取收藏系列：
+
+```bash
+uv run python get_collect_actors.py \
+  --collect-scope series \
+  --fetch-mode browser
+```
+
+说明：
+
+- `collect-scope=actor` 写入 `actors`
+- 其他维度写入 `collections`
+
+### 2. 作品抓取（演员维度）
 
 ```bash
 uv run python get_actor_works.py \
   --tags s,d \
-  --actor-name 名1,名2 \\  # 可选，逗号分隔，默认抓全部
+  --actor-name 名1,名2
 ```
 
-写入 `works` 表。
+写入 `works`。
 
-#### 磁链抓取
+### 3. 作品抓取（非演员维度）
+
+```bash
+uv run python get_collect_scope_works.py \
+  --collect-scope series \
+  --fetch-mode browser
+```
+
+写入 `collection_works`。
+
+### 4. 磁链抓取（演员维度）
 
 ```bash
 uv run python get_works_magnet.py \
-  --actor-name 名1,名2 \\  # 可选，逗号分隔，默认抓全部
+  --actor-name 名1,名2
 ```
 
-写入 `magnets` 表，`--actor-name` 可指定一人或多名演员（逗号分隔），默认抓全部（`main.py` 同默认）。
+写入 `magnets`。
 
-#### 磁链筛选
+### 5. 磁链抓取（非演员维度）
 
-最佳磁链导出 TXT：
+```bash
+uv run python get_collect_scope_magnets.py \
+  --collect-scope series \
+  --fetch-mode browser
+```
+
+写入 `collection_magnets`。
+
+### 6. 磁链筛选导出
 
 ```bash
 uv run python mdcx_magnets.py
-# 仅处理当前目录，可用 --current-only
+```
+
+仅处理单目录：
+
+```bash
 uv run python mdcx_magnets.py userdata/magnets/坂井なるは --current-only --db userdata/actors.db
 ```
 
-- 递归遍历目录，为每位演员生成同名 TXT；已存在的磁链不会重复写入。
-- `main.py` 全流程会在抓取后自动筛选一次。
+---
 
-### 常用参数
+## 五、参数速查（主流程）
 
-- `--cookie`：Cookie JSON 路径（默认 `cookie.json`）。
-- `--db-path/--db`：SQLite 数据库路径（默认 `userdata/actors.db`）。
-- `--magnets-dir/--output-dir`：TXT 导出根目录（默认 `userdata/magnets`）。
-- `--tags`：作品标签过滤，逗号分隔（例如 `s` 或 `s,d`）。
-- `--actor-name`：指定演员，逗号分隔。
+- `--cookie`：Cookie JSON 路径（默认 `cookie.json`）
+- `--db-path`：数据库路径（默认 `userdata/actors.db`）
+- `--magnets-dir`：导出目录（默认 `userdata/magnets`）
+- `--tags`：作品标签过滤（如 `s,d`）
+- `--collect-scope`：收藏维度（默认 `actor`）
+- `--fetch-mode`：`httpx` 或 `browser`
+- `--browser-user-data-dir`：浏览器会话目录
+- `--browser-headless`：浏览器无头模式
+- `--browser-timeout-seconds`：页面超时
+- `--challenge-timeout-seconds`：人工验证等待时间
 
-### 常见问题
+---
 
-- **抓取 0 条**：多为 Cookie 失效，检查 `cf_clearance`，必要时看 `debug_*.html`。
-- **访问频率**：已添加 0.8~1.6 s 随机延时，仍请适度使用。
-- **中途断点**：抓取支持断点续跑，断点信息保存在 `userdata/checkpoints.json`。
+## 六、输出目录与数据文件
 
-### 目录结构
-
-```
+```text
 userdata/
-  actors.db                  # SQLite 数据库（actors / works / magnets 三张表）
-  magnets/                   # mdcx_magnets.py 输出的精选磁链 TXT 根目录
-  history.jsonl              # 抓取历史记录
-  checkpoints.json           # 断点信息
+  actors.db
+  magnets/
+  history.jsonl
+  checkpoints.json
 logs/
-  2025-11-02.log             # 每日日志文件，自动追加
-cookie.json                  # 你的登录 Cookie
-schema.sql                   # 数据库结构定义（供手动初始化使用）
-config.py / storage.py / utils.py 等核心脚本
+  YYYY-MM-DD.log
+debug/
+  *.html / *.png
 ```
 
-### 日志说明
+数据库包含：
 
-- 所有脚本默认输出到标准输出和 `logs/<当天日期>.log`，方便排查问题。
-- 如果只运行单个脚本（例如 `mdcx_magnets.py`），也会自动创建相同的日志文件并追加内容。
+- `actors / works / magnets`
+- `collections / collection_works / collection_magnets`
+
+---
+
+## 七、浏览器模式说明
+
+`browser` 模式用于 Cloudflare/登录校验场景。
+
+- 优先复用持久化会话目录（手动过验证后可持续使用）
+- 若环境缺少可用浏览器，请安装 Chromium：
+
+```bash
+uv run playwright install chromium
+```
+
+---
+
+## 八、注意事项
+
+- 请遵守目标站点使用条款及相关法律法规。
+- 请控制抓取频率，避免高并发或短时间高频请求。
+- `cookie.json` 为敏感文件，不要上传到公开仓库。
+
+---
+
+## 九、CI 打包说明
+
+GitHub Actions 发布工作流：
+
+- 平台：
+  - `windows-2022` -> `windows-x64.zip`
+  - `macos-14` -> `macos-arm64.dmg`
+- 流程：
+  1. 各平台构建并上传 artifact
+  2. 统一聚合 artifact 并发布 GitHub Release
+
+工作流文件：
+
+`/.github/workflows/release.yml`
+
+---
+
+## 十、常见问题
+
+### 1. 抓取 0 条或 403
+
+- 优先使用 `--fetch-mode browser`
+- 复用同一 `--browser-user-data-dir`
+- 检查 Cookie 是否仍有效
+
+### 2. GUI 点了停止无效
+
+已支持可中断流程，若仍出现，请查看 `logs/` 日志定位具体阶段。
+
+### 3. browser 模式报浏览器不可用
+
+先确认本机有可用浏览器，再执行：
+
+```bash
+uv run playwright install chromium
+```
+

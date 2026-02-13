@@ -1,12 +1,13 @@
 import datetime
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, FeatureNotFound
 
 
 class CancelledError(RuntimeError):
@@ -14,6 +15,7 @@ class CancelledError(RuntimeError):
 
 
 _cancel_checker = None
+_soup_fallback_warned = False
 
 
 def set_cancel_checker(checker) -> None:
@@ -24,6 +26,29 @@ def set_cancel_checker(checker) -> None:
 def _check_cancel() -> None:
     if _cancel_checker and _cancel_checker():
         raise CancelledError("操作已取消")
+
+
+def ensure_not_cancelled() -> None:
+    """对外暴露取消检查，供长循环任务在关键节点调用。"""
+    _check_cancel()
+
+
+def sleep_with_cancel(seconds: float, *, step_seconds: float = 0.1) -> None:
+    """
+    可响应取消的 sleep：将长等待拆分为短间隔并在间隔间检查取消信号。
+    """
+    if seconds <= 0:
+        _check_cancel()
+        return
+
+    step = max(0.01, step_seconds)
+    deadline = time.monotonic() + seconds
+    while True:
+        _check_cancel()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(step, remaining))
 
 
 def _get_logger():
@@ -48,7 +73,17 @@ def setup_daily_file_logger(
     """
     target_date = date or datetime.date.today()
     log_directory = Path(log_dir)
-    log_directory.mkdir(parents=True, exist_ok=True)
+    try:
+        log_directory.mkdir(parents=True, exist_ok=True)
+    except OSError as primary_error:
+        fallback_dir = Path.home() / ".crawljav" / "logs"
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+        logging.getLogger(__name__).warning(
+            "日志目录不可写，已回退到用户目录: %s (原因: %s)",
+            fallback_dir,
+            primary_error,
+        )
+        log_directory = fallback_dir
     log_path = log_directory / f"{target_date.isoformat()}.log"
 
     target_logger = logger or logging.getLogger()
@@ -152,8 +187,22 @@ def fetch_html(client: httpx.Client, url: str) -> str:
     return r.text
 
 
+def build_soup(html: str) -> BeautifulSoup:
+    """
+    构建 HTML 解析树：优先 lxml，不可用时回退 html.parser。
+    """
+    global _soup_fallback_warned
+    try:
+        return BeautifulSoup(html, "lxml")
+    except FeatureNotFound:
+        if not _soup_fallback_warned:
+            _get_logger().warning("lxml 不可用，已回退到 html.parser。")
+            _soup_fallback_warned = True
+        return BeautifulSoup(html, "html.parser")
+
+
 def find_next_url(html: str):
-    soup = BeautifulSoup(html, "lxml")
+    soup = build_soup(html)
     # “下一頁”按钮
     a = soup.find("a", string=lambda s: s and "下一頁" in s)
     base_url = _get_base_url()

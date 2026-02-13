@@ -6,6 +6,8 @@ from pathlib import Path
 import sys
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
+from collect_scopes import normalize_collect_scope
+
 def _resolve_schema_file() -> Path:
     candidates = [
         Path(__file__).with_name("schema.sql"),
@@ -62,6 +64,16 @@ def _normalize_magnet_record(
         tags = str(tags_field).strip()
     size = str(record.get("size") or "").strip()
     return magnet, tags, size
+
+
+def _normalize_collection_record(
+    record: Mapping[str, object]
+) -> Optional[Tuple[str, str]]:
+    raw_name = record.get("name") or record.get("strong") or record.get("title") or ""
+    raw_href = record.get("href") or record.get("url") or ""
+    name = str(raw_name).strip()
+    href = str(raw_href).strip()
+    return (name, href) if name else None
 
 
 class Storage(AbstractContextManager["Storage"]):
@@ -159,6 +171,68 @@ class Storage(AbstractContextManager["Storage"]):
             )
         return int(cursor.lastrowid)
 
+    # --- 收藏维度相关工具 ---------------------------------------------
+
+    def save_collections(
+        self,
+        scope: str,
+        collections: Iterable[Mapping[str, object]],
+    ) -> int:
+        normalized_scope = normalize_collect_scope(scope)
+        rows: List[Tuple[str, str]] = []
+        for item in collections:
+            normalized = _normalize_collection_record(item)
+            if normalized:
+                rows.append(normalized)
+        if not rows:
+            return 0
+
+        with self.conn:
+            for name, href in rows:
+                self.conn.execute(
+                    """
+                    INSERT INTO collections (scope, name, href)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(scope, name) DO UPDATE SET href=excluded.href
+                    """,
+                    (normalized_scope, name, href),
+                )
+        return len(rows)
+
+    def iter_collections(self, scope: str) -> List[Tuple[str, str]]:
+        normalized_scope = normalize_collect_scope(scope)
+        cur = self.conn.execute(
+            """
+            SELECT name, COALESCE(href, '') AS href
+            FROM collections
+            WHERE scope = ?
+            ORDER BY LOWER(name)
+            """,
+            (normalized_scope,),
+        )
+        return [(row["name"], row["href"]) for row in cur]
+
+    def _ensure_collection(self, scope: str, name: str, href: str | None = None) -> int:
+        normalized_scope = normalize_collect_scope(scope)
+        row = self.conn.execute(
+            "SELECT id FROM collections WHERE scope = ? AND name = ?",
+            (normalized_scope, name),
+        ).fetchone()
+        if row:
+            if href:
+                self.conn.execute(
+                    "UPDATE collections SET href = ? WHERE id = ? AND COALESCE(href, '') != ?",
+                    (href, row["id"], href),
+                )
+            return int(row["id"])
+
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT INTO collections (scope, name, href) VALUES (?, ?, ?)",
+                (normalized_scope, name, href),
+            )
+        return int(cursor.lastrowid)
+
     # --- 作品相关工具 --------------------------------------------------
 
     def save_actor_works(
@@ -226,6 +300,115 @@ class Storage(AbstractContextManager["Storage"]):
             )
         return grouped
 
+    def update_work_fields(
+        self,
+        *,
+        actor_name: str,
+        old_code: str,
+        new_code: str,
+        new_title: str,
+    ) -> bool:
+        actor_name_text = actor_name.strip()
+        old_code_text = old_code.strip()
+        new_code_text = new_code.strip()
+        new_title_text = new_title.strip()
+        if not actor_name_text or not old_code_text or not new_code_text:
+            raise ValueError("演员名与番号不能为空")
+
+        actor = self.conn.execute(
+            "SELECT id FROM actors WHERE name = ?",
+            (actor_name_text,),
+        ).fetchone()
+        if not actor:
+            return False
+        actor_id = int(actor["id"])
+
+        work_row = self.conn.execute(
+            "SELECT id FROM works WHERE actor_id = ? AND code = ?",
+            (actor_id, old_code_text),
+        ).fetchone()
+        if not work_row:
+            return False
+
+        if old_code_text != new_code_text:
+            conflict = self.conn.execute(
+                "SELECT id FROM works WHERE actor_id = ? AND code = ?",
+                (actor_id, new_code_text),
+            ).fetchone()
+            if conflict:
+                raise ValueError(f"番号已存在：{new_code_text}")
+
+        with self.conn:
+            self.conn.execute(
+                """
+                UPDATE works
+                SET code = ?, title = ?
+                WHERE actor_id = ? AND code = ?
+                """,
+                (new_code_text, new_title_text or None, actor_id, old_code_text),
+            )
+        return True
+
+    def save_collection_works(
+        self,
+        scope: str,
+        collection_name: str,
+        collection_href: str,
+        works: Iterable[Mapping[str, object]],
+    ) -> int:
+        normalized: List[Tuple[str, str, str]] = []
+        for work in works:
+            entry = _normalize_work_record(work)
+            if entry:
+                normalized.append(entry)
+        if not normalized:
+            return 0
+
+        collection_id = self._ensure_collection(scope, collection_name, collection_href)
+        with self.conn:
+            for code, href, title in normalized:
+                self.conn.execute(
+                    """
+                    INSERT INTO collection_works (collection_id, code, title, href)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(collection_id, code) DO UPDATE SET
+                        title = excluded.title,
+                        href = excluded.href
+                    """,
+                    (collection_id, code, title or None, href or None),
+                )
+        return len(normalized)
+
+    def get_all_collection_works(self, scope: str) -> Dict[str, List[Dict[str, str]]]:
+        normalized_scope = normalize_collect_scope(scope)
+        cur = self.conn.execute(
+            """
+            SELECT c.name AS collection_name,
+                   cw.code,
+                   COALESCE(cw.title, '') AS title,
+                   COALESCE(cw.href, '') AS href
+            FROM collection_works cw
+            JOIN collections c ON c.id = cw.collection_id
+            WHERE c.scope = ?
+            ORDER BY LOWER(c.name), cw.code
+            """,
+            (normalized_scope,),
+        )
+        grouped: Dict[str, List[Dict[str, str]]] = {}
+        for row in cur:
+            grouped.setdefault(row["collection_name"], []).append(
+                {"code": row["code"], "title": row["title"], "href": row["href"]}
+            )
+        return grouped
+
+    def get_collection_href(self, scope: str, collection_name: str) -> Optional[str]:
+        normalized_scope = normalize_collect_scope(scope)
+        row = self.conn.execute(
+            "SELECT href FROM collections WHERE scope = ? AND name = ?",
+            (normalized_scope, collection_name),
+        ).fetchone()
+        return str(row["href"]) if row and row["href"] is not None else None
+
     def _ensure_work(
         self,
         actor_name: str,
@@ -251,6 +434,35 @@ class Storage(AbstractContextManager["Storage"]):
                 VALUES (?, ?, ?, ?)
                 """,
                 (actor_id, code, title or None, href or None),
+            )
+        return int(cursor.lastrowid)
+
+    def _ensure_collection_work(
+        self,
+        scope: str,
+        collection_name: str,
+        collection_href: str,
+        code: str,
+        title: str | None,
+        href: str | None,
+    ) -> int:
+        collection_id = self._ensure_collection(scope, collection_name, collection_href)
+        row = self.conn.execute(
+            """
+            SELECT id FROM collection_works
+            WHERE collection_id = ? AND code = ?
+            """,
+            (collection_id, code),
+        ).fetchone()
+        if row:
+            return int(row["id"])
+        with self.conn:
+            cursor = self.conn.execute(
+                """
+                INSERT INTO collection_works (collection_id, code, title, href)
+                VALUES (?, ?, ?, ?)
+                """,
+                (collection_id, code, title or None, href or None),
             )
         return int(cursor.lastrowid)
 
@@ -327,3 +539,46 @@ class Storage(AbstractContextManager["Storage"]):
             "SELECT href FROM actors WHERE name = ?", (actor_name,)
         ).fetchone()
         return str(row["href"]) if row and row["href"] is not None else None
+
+    def save_collection_magnets(
+        self,
+        scope: str,
+        collection_name: str,
+        collection_href: str,
+        code: str,
+        magnets: Iterable[Mapping[str, object]],
+        *,
+        title: str | None = None,
+        href: str | None = None,
+    ) -> int:
+        normalized: List[Tuple[str, str, str]] = []
+        for magnet in magnets:
+            entry = _normalize_magnet_record(magnet)
+            if entry:
+                normalized.append(entry)
+
+        collection_work_id = self._ensure_collection_work(
+            scope=scope,
+            collection_name=collection_name,
+            collection_href=collection_href,
+            code=code,
+            title=title,
+            href=href,
+        )
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM collection_magnets WHERE collection_work_id = ?",
+                (collection_work_id,),
+            )
+            if normalized:
+                self.conn.executemany(
+                    """
+                    INSERT INTO collection_magnets (collection_work_id, magnet, tags, size)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    [
+                        (collection_work_id, magnet, tags or None, size or None)
+                        for magnet, tags, size in normalized
+                    ],
+                )
+        return len(normalized)
