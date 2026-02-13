@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import platform
+import sys
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -357,6 +359,11 @@ def _launch_persistent_context_with_fallback(
     ) from last_error
 
 
+def _configure_playwright_runtime_environment() -> None:
+    if getattr(sys, "frozen", False):
+        os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
+
+
 @contextmanager
 def create_fetcher(
     cookies: Mapping[str, Any] | None,
@@ -374,6 +381,8 @@ def create_fetcher(
         raise RuntimeError(
             "浏览器模式依赖 playwright，请先安装依赖并执行: uv run playwright install chromium"
         )
+
+    _configure_playwright_runtime_environment()
 
     user_data_dir = Path(resolved.browser_user_data_dir)
     user_data_dir.mkdir(parents=True, exist_ok=True)

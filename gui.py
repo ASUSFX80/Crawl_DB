@@ -1130,6 +1130,12 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.fetch_mode_combo.currentData() in ("httpx", "browser")
             else DEFAULT_FETCH_MODE
         )
+        collect_scope = (
+            self.collect_scope_combo.currentData()
+            if self.collect_scope_combo.currentData()
+            in ("actor", "series", "maker", "director", "code")
+            else DEFAULT_COLLECT_SCOPE
+        )
         if fetch_mode == "httpx":
             if not cookie_path:
                 QtWidgets.QMessageBox.warning(self, "缺少参数", "需要填写 Cookie 路径。")
