@@ -195,7 +195,7 @@ uv run python mdcx_magnets.py userdata/magnets/坂井なるは --current-only --
 - `--magnets-dir`：导出目录（默认 `userdata/magnets`）
 - `--tags`：作品标签过滤（如 `s,d`）
 - `--collect-scope`：收藏维度（默认 `actor`）
-- `--fetch-mode`：`httpx` 或 `browser`
+- `--fetch-mode`：`browser`（默认）或 `httpx`
 - `--browser-user-data-dir`：浏览器会话目录
 - `--browser-headless`：浏览器无头模式
 - `--browser-timeout-seconds`：页面超时
