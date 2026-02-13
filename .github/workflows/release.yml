@@ -23,7 +23,7 @@ jobs:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     env:
-      PLAYWRIGHT_BROWSERS_PATH: "0"
+      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
     strategy:
       fail-fast: false
       matrix:
@@ -112,6 +112,9 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           python -m PyInstaller --noconfirm --clean --windowed --icon build_assets/icon.icns --collect-all playwright --add-data "${{ env.SCHEMA_FILE }}${{ matrix.data_sep }}." --name "${{ env.APP_NAME }}" gui.py
+          mkdir -p "dist/${{ env.APP_NAME }}.app/Contents/Resources/ms-playwright"
+          cp -R "$PLAYWRIGHT_BROWSERS_PATH"/. "dist/${{ env.APP_NAME }}.app/Contents/Resources/ms-playwright/"
+          codesign --force --deep --sign - "dist/${{ env.APP_NAME }}.app"
           brew install create-dmg
           rm -f "dist/${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.target }}.dmg"
           rm -rf dist/dmg
@@ -132,7 +135,9 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           python -m PyInstaller --noconfirm --clean --windowed --onefile --icon build_assets/icon.ico --collect-all playwright --add-data "${{ env.SCHEMA_FILE }}${{ matrix.data_sep }}." --name "${{ env.APP_NAME }}" gui.py
-          powershell -Command "Compress-Archive -Path dist\\${{ env.APP_NAME }}.exe -DestinationPath dist\\${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.target }}.zip"
+          if (Test-Path "dist\\ms-playwright") { Remove-Item -Recurse -Force "dist\\ms-playwright" }
+          Copy-Item -Recurse -Force "$env:PLAYWRIGHT_BROWSERS_PATH" "dist\\ms-playwright"
+          powershell -Command "Compress-Archive -Path dist\\${{ env.APP_NAME }}.exe,dist\\ms-playwright -DestinationPath dist\\${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.target }}.zip"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

@@ -360,8 +360,21 @@ def _launch_persistent_context_with_fallback(
 
 
 def _configure_playwright_runtime_environment() -> None:
-    if getattr(sys, "frozen", False):
-        os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
+    if not getattr(sys, "frozen", False):
+        return
+    if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+        return
+
+    executable = Path(sys.executable).resolve()
+    candidates = (
+        executable.parent / "ms-playwright",
+        executable.parent.parent / "Resources" / "ms-playwright",
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(candidate)
+            return
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "0"
 
 
 @contextmanager
