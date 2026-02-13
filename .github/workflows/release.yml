@@ -17,6 +17,8 @@ env:
   PYTHON_VERSION: "3.11"
   SCHEMA_FILE: schema.sql
   RELEASE_TAG: ${{ github.ref_name }}
+  APP_ICON_SCALE: "0.85"
+  DMG_ICON_SIZE: "104"
 
 jobs:
   build:
@@ -73,8 +75,21 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           python - <<'PY'
+          import os
           from pathlib import Path
-          from PIL import Image
+          from PIL import Image, ImageOps
+
+          icon_scale = float(os.environ.get("APP_ICON_SCALE", "0.85"))
+          if not (0.1 <= icon_scale <= 1.0):
+              raise SystemExit(f"APP_ICON_SCALE must be in [0.1, 1.0], got {icon_scale}")
+
+          def scaled_canvas(image: Image.Image, canvas_size: int, scale: float) -> Image.Image:
+              side = max(1, int(round(canvas_size * scale)))
+              resized = ImageOps.contain(image, (side, side), Image.LANCZOS)
+              canvas = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+              offset = ((canvas_size - resized.width) // 2, (canvas_size - resized.height) // 2)
+              canvas.paste(resized, offset, resized)
+              return canvas
 
           source_icon = Path("logo.png")
           if not source_icon.exists():
@@ -89,10 +104,10 @@ jobs:
           iconset.mkdir(exist_ok=True)
           sizes = [16, 32, 64, 128, 256, 512, 1024]
           for size in sizes:
-              resized = img.resize((size, size), Image.LANCZOS)
+              resized = scaled_canvas(img, size, icon_scale)
               resized.save(iconset / f"icon_{size}x{size}.png")
               if size <= 512:
-                  retina = img.resize((size * 2, size * 2), Image.LANCZOS)
+                  retina = scaled_canvas(img, size * 2, icon_scale)
                   retina.save(iconset / f"icon_{size}x{size}@2x.png")
           PY
           iconutil -c icns build_assets/icon.iconset -o build_assets/icon.icns
@@ -102,8 +117,21 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
+          import os
           from pathlib import Path
-          from PIL import Image
+          from PIL import Image, ImageOps
+
+          icon_scale = float(os.environ.get("APP_ICON_SCALE", "0.85"))
+          if not (0.1 <= icon_scale <= 1.0):
+              raise SystemExit(f"APP_ICON_SCALE must be in [0.1, 1.0], got {icon_scale}")
+
+          def scaled_canvas(image: Image.Image, canvas_size: int, scale: float) -> Image.Image:
+              side = max(1, int(round(canvas_size * scale)))
+              resized = ImageOps.contain(image, (side, side), Image.LANCZOS)
+              canvas = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+              offset = ((canvas_size - resized.width) // 2, (canvas_size - resized.height) // 2)
+              canvas.paste(resized, offset, resized)
+              return canvas
 
           source_icon = Path("logo.png")
           if not source_icon.exists():
@@ -114,9 +142,10 @@ jobs:
           png_path.write_bytes(source_icon.read_bytes())
 
           img = Image.open(png_path).convert("RGBA")
+          base = scaled_canvas(img, 1024, icon_scale)
           sizes = [16, 32, 48, 64, 128, 256]
           ico_path = asset_dir / "icon.ico"
-          img.save(ico_path, sizes=[(s, s) for s in sizes])
+          base.save(ico_path, sizes=[(s, s) for s in sizes])
           PY
 
       - name: Build app (macOS)
@@ -135,7 +164,7 @@ jobs:
             --volname "${{ env.APP_NAME }}" \
             --window-pos 200 120 \
             --window-size 660 400 \
-            --icon-size 120 \
+            --icon-size ${{ env.DMG_ICON_SIZE }} \
             --icon "${{ env.APP_NAME }}.app" 160 200 \
             --app-drop-link 500 200 \
             "dist/${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.target }}.dmg" \
