@@ -22,8 +22,6 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
     strategy:
       fail-fast: false
       matrix:
@@ -53,6 +51,19 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r "${{ matrix.requirements_file }}"
           python -m pip install PyInstaller Pillow
+
+      - name: Set Playwright Browser Path (macOS)
+        if: startsWith(matrix.os, 'macos')
+        shell: bash
+        run: |
+          echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright" >> "$GITHUB_ENV"
+
+      - name: Set Playwright Browser Path (Windows)
+        if: startsWith(matrix.os, 'windows')
+        shell: pwsh
+        run: |
+          $browserPath = Join-Path $env:RUNNER_TEMP "ms-playwright"
+          "PLAYWRIGHT_BROWSERS_PATH=$browserPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install Playwright Chromium
         run: |
