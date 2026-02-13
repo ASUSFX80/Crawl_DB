@@ -339,8 +339,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.collect_scope_combo.addItem("收藏维度: 导演", "director")
         self.collect_scope_combo.addItem("收藏维度: 番号", "code")
         self.fetch_mode_combo = QtWidgets.QComboBox()
-        self.fetch_mode_combo.addItem("httpx（默认）", "httpx")
-        self.fetch_mode_combo.addItem("browser（Playwright）", "browser")
+        self.fetch_mode_combo.addItem("browser（默认，Playwright）", "browser")
+        self.fetch_mode_combo.addItem("httpx", "httpx")
         self.browser_profile_input = QtWidgets.QLineEdit(
             str(DEFAULT_BROWSER_USER_DATA_DIR)
         )
@@ -638,8 +638,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.default_output = QtWidgets.QLineEdit("userdata/magnets")
         self.delay_range = QtWidgets.QLineEdit("0.8-1.6")
         self.default_fetch_mode_combo = QtWidgets.QComboBox()
-        self.default_fetch_mode_combo.addItem("httpx（默认）", "httpx")
-        self.default_fetch_mode_combo.addItem("browser（Playwright）", "browser")
+        self.default_fetch_mode_combo.addItem("browser（默认，Playwright）", "browser")
+        self.default_fetch_mode_combo.addItem("httpx", "httpx")
         self.default_browser_profile = QtWidgets.QLineEdit(
             str(DEFAULT_BROWSER_USER_DATA_DIR)
         )

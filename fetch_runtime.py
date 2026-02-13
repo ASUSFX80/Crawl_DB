@@ -27,7 +27,7 @@ FetchMode = Literal["httpx", "browser"]
 
 @dataclass
 class FetchConfig:
-    mode: FetchMode = "httpx"
+    mode: FetchMode = "browser"
     browser_user_data_dir: str = "userdata/browser_profile/javdb"
     browser_headless: bool = False
     browser_timeout_seconds: int = 30
@@ -60,8 +60,8 @@ def add_fetch_mode_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--fetch-mode",
         choices=["httpx", "browser"],
-        default="httpx",
-        help="抓取模式：httpx（默认）或 browser（Playwright 持久化会话）。",
+        default="browser",
+        help="抓取模式：browser（默认，Playwright 持久化会话）或 httpx。",
     )
     parser.add_argument(
         "--browser-user-data-dir",
@@ -89,7 +89,7 @@ def add_fetch_mode_arguments(parser: argparse.ArgumentParser) -> None:
 
 def fetch_config_from_args(args: argparse.Namespace) -> FetchConfig:
     return FetchConfig(
-        mode=cast(FetchMode, getattr(args, "fetch_mode", "httpx")),
+        mode=cast(FetchMode, getattr(args, "fetch_mode", "browser")),
         browser_user_data_dir=str(
             getattr(args, "browser_user_data_dir", "userdata/browser_profile/javdb")
         ),
@@ -105,9 +105,9 @@ def normalize_fetch_config(fetch_config: FetchConfig | Mapping[str, Any] | None)
     if isinstance(fetch_config, FetchConfig):
         return fetch_config
 
-    mode = str(fetch_config.get("mode", "httpx"))
+    mode = str(fetch_config.get("mode", "browser"))
     if mode not in ("httpx", "browser"):
-        mode = "httpx"
+        mode = "browser"
     return FetchConfig(
         mode=cast(FetchMode, mode),
         browser_user_data_dir=str(
