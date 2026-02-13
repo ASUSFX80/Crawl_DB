@@ -1029,7 +1029,7 @@ class MainWindow(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.information(
             self,
             "提示",
-            f"应用目录不可写，已将运行目录切换到：{self._runtime_root()}",
+            f"默认运行目录不可写，已切换到：{self._runtime_root()}",
         )
 
     def _on_filter_mode_changed(self, *_args) -> None:

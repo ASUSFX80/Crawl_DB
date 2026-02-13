@@ -102,6 +102,7 @@ uv run python gui.py
 ```
 
 GUI 流程页支持收藏维度切换；数据浏览页支持搜索、排序、筛选、批量导出、右键复制和作品编辑。
+打包版 GUI 默认运行数据根目录为 `~/.crawljav`（源码运行仍使用当前工作目录）。
 
 ---
 
@@ -280,4 +281,3 @@ GitHub Actions 发布工作流：
 ```bash
 uv run playwright install chromium
 ```
-

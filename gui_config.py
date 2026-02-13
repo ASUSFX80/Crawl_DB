@@ -30,9 +30,20 @@ def is_writable_dir(path: Path) -> bool:
 
 def select_runtime_root(*, frozen: bool, executable: str, cwd: Path, home: Path) -> tuple[Path, bool]:
     if frozen:
-        preferred = Path(executable).resolve().parent
-    else:
-        preferred = cwd.resolve()
+        preferred = (home / ".crawljav").resolve()
+        if is_writable_dir(preferred):
+            return preferred, False
+
+        fallback_candidates = (
+            Path(executable).resolve().parent,
+            cwd.resolve(),
+        )
+        for candidate in fallback_candidates:
+            if is_writable_dir(candidate):
+                return candidate, True
+        return preferred, True
+
+    preferred = cwd.resolve()
     if is_writable_dir(preferred):
         return preferred, False
     fallback = (home / ".crawljav").resolve()
