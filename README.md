@@ -25,22 +25,22 @@
 
 ### 1. 安装依赖
 
-推荐使用 `uv`：
+推荐统一使用 `conda` 虚拟环境：
 
 ```bash
-uv sync
-```
+conda create -n crawljav python=3.11 -y
+conda activate crawljav
 
-如果使用 `pip`，可按平台安装：
-
-```bash
-# macOS
+# macOS / Linux
 pip install -r requirements-mac.txt
 
 # Windows
 pip install -r requirements-win.txt
+```
 
-# 兼容入口（自动包含通用依赖）
+如果你已经在现有 conda 环境中，也可直接安装兼容入口：
+
+```bash
 pip install -r requirements.txt
 ```
 
@@ -57,17 +57,19 @@ pip install -r requirements.txt
 ### 3. 初始化并运行
 
 ```bash
-uv run python main.py
+python main.py
 ```
 
 ---
 
 ## 三、运行方式
 
+以下命令默认在已激活的 conda 环境（`conda activate crawljav`）中执行。
+
 ### 1. 一键全流程
 
 ```bash
-uv run python main.py \
+python main.py \
   --tags s,d
 ```
 
@@ -81,7 +83,7 @@ uv run python main.py \
 浏览器模式示例：
 
 ```bash
-uv run python main.py \
+python main.py \
   --fetch-mode browser \
   --browser-user-data-dir userdata/browser_profile/javdb \
   --challenge-timeout-seconds 240
@@ -90,7 +92,7 @@ uv run python main.py \
 非演员维度示例：
 
 ```bash
-uv run python main.py \
+python main.py \
   --collect-scope series \
   --fetch-mode browser
 ```
@@ -98,7 +100,7 @@ uv run python main.py \
 ### 2. GUI 运行
 
 ```bash
-uv run python gui.py
+python gui.py
 ```
 
 GUI 流程页支持收藏维度切换；数据浏览页支持搜索、排序、筛选、批量导出、右键复制和作品编辑。
@@ -111,13 +113,13 @@ GUI 流程页支持收藏维度切换；数据浏览页支持搜索、排序、�
 ### 1. 收藏抓取
 
 ```bash
-uv run python get_collect_actors.py
+python get_collect_actors.py
 ```
 
 调试响应落盘与对比：
 
 ```bash
-uv run python get_collect_actors.py \
+python get_collect_actors.py \
   --response-dump-path debug/collection_actors_runtime.html \
   --compare-with-path debug/collection_actors.html
 ```
@@ -125,7 +127,7 @@ uv run python get_collect_actors.py \
 抓取收藏系列：
 
 ```bash
-uv run python get_collect_actors.py \
+python get_collect_actors.py \
   --collect-scope series \
   --fetch-mode browser
 ```
@@ -138,7 +140,7 @@ uv run python get_collect_actors.py \
 ### 2. 作品抓取（演员维度）
 
 ```bash
-uv run python get_actor_works.py \
+python get_actor_works.py \
   --tags s,d \
   --actor-name 名1,名2
 ```
@@ -148,7 +150,7 @@ uv run python get_actor_works.py \
 ### 3. 作品抓取（非演员维度）
 
 ```bash
-uv run python get_collect_scope_works.py \
+python get_collect_scope_works.py \
   --collect-scope series \
   --fetch-mode browser
 ```
@@ -158,7 +160,7 @@ uv run python get_collect_scope_works.py \
 ### 4. 磁链抓取（演员维度）
 
 ```bash
-uv run python get_works_magnet.py \
+python get_works_magnet.py \
   --actor-name 名1,名2
 ```
 
@@ -167,7 +169,7 @@ uv run python get_works_magnet.py \
 ### 5. 磁链抓取（非演员维度）
 
 ```bash
-uv run python get_collect_scope_magnets.py \
+python get_collect_scope_magnets.py \
   --collect-scope series \
   --fetch-mode browser
 ```
@@ -177,13 +179,13 @@ uv run python get_collect_scope_magnets.py \
 ### 6. 磁链筛选导出
 
 ```bash
-uv run python mdcx_magnets.py
+python mdcx_magnets.py
 ```
 
 仅处理单目录：
 
 ```bash
-uv run python mdcx_magnets.py userdata/magnets/坂井なるは --current-only --db userdata/actors.db
+python mdcx_magnets.py userdata/magnets/坂井なるは --current-only --db userdata/actors.db
 ```
 
 ---
@@ -232,7 +234,7 @@ debug/
 - 若环境缺少可用浏览器，请安装 Chromium：
 
 ```bash
-uv run playwright install chromium
+python -m playwright install chromium
 ```
 
 ---
@@ -279,5 +281,5 @@ GitHub Actions 发布工作流：
 先确认本机有可用浏览器，再执行：
 
 ```bash
-uv run playwright install chromium
+python -m playwright install chromium
 ```

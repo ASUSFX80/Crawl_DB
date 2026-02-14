@@ -392,7 +392,7 @@ def create_fetcher(
 
     if sync_playwright is None:
         raise RuntimeError(
-            "浏览器模式依赖 playwright，请先安装依赖并执行: uv run playwright install chromium"
+            "浏览器模式依赖 playwright，请先安装依赖并执行: python -m playwright install chromium"
         )
 
     _configure_playwright_runtime_environment()

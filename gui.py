@@ -1072,27 +1072,6 @@ class MainWindow(QtWidgets.QMainWindow):
             labels.append("磁链筛选")
         return labels
 
-    def _confirm_special_filter(
-        self, *, mode: Literal["code", "series"], values: list[str]
-    ) -> bool:
-        mode_label = "番号筛选" if mode == "code" else "系列筛选"
-        stages = "、".join(self._selected_stage_labels()) or "无阶段（将直接结束）"
-        value_text = "、".join(values)
-        message = (
-            f"筛选模式：{mode_label}\n"
-            f"筛选值：{value_text}\n"
-            f"本次执行阶段：{stages}\n\n"
-            "确认开始吗？"
-        )
-        reply = QtWidgets.QMessageBox.question(
-            self,
-            "确认执行",
-            message,
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
-        )
-        return reply == QtWidgets.QMessageBox.Yes
-
     def _start_flow(self) -> None:
         if self._is_thread_running():
             return
@@ -1162,8 +1141,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if filter_mode in ("code", "series"):
             if not filter_values:
                 QtWidgets.QMessageBox.warning(self, "缺少筛选值", "请至少输入一个筛选值。")
-                return
-            if not self._confirm_special_filter(mode=filter_mode, values=filter_values):
                 return
 
         self.log_view.clear()
