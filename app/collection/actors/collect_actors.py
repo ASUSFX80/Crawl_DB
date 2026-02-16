@@ -8,13 +8,8 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
-from collect_scopes import (
-    build_collect_start_url,
-    expected_selector_for_scope,
-    normalize_collect_scope,
-)
-from config import BASE_URL, LOGGER
-from fetch_runtime import (
+from app.core.config import BASE_URL, LOGGER
+from app.core.fetch_runtime import (
     FetchConfig,
     add_fetch_mode_arguments,
     create_fetcher,
@@ -22,14 +17,18 @@ from fetch_runtime import (
     log_fetch_diagnostics,
     normalize_fetch_config,
 )
-from storage import Storage
-from utils import (
+from app.core.storage import Storage
+from app.core.utils import (
     build_soup,
     ensure_not_cancelled,
     find_next_url,
     load_cookie_dict,
     sleep_with_cancel,
 )
+
+_ACTOR_COLLECTION_URL = f"{BASE_URL}/users/collection_actors"
+_ACTOR_COLLECTION_SELECTOR = "div#actors div.box.actor-box"
+
 
 def _build_soup(html: str) -> BeautifulSoup:
     """构建 BeautifulSoup 解析树。"""
@@ -79,29 +78,6 @@ def _parse_actors_from_soup(soup: BeautifulSoup) -> list[dict[str, str]]:
     return items
 
 
-def _parse_collections_from_soup(soup: BeautifulSoup) -> list[dict[str, str]]:
-    items: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for anchor in soup.select("section a[href]"):
-        href_raw = str(anchor.get("href") or "").strip()
-        if not href_raw:
-            continue
-        if href_raw.startswith("#"):
-            continue
-        if "/users/" in href_raw:
-            continue
-        href = urljoin(BASE_URL, href_raw)
-        if href in seen:
-            continue
-        seen.add(href)
-        strong = anchor.select_one("strong")
-        name = strong.get_text(strip=True) if strong else anchor.get_text(strip=True)
-        if not name:
-            continue
-        items.append({"name": name, "href": href})
-    return items
-
-
 def _save_response_dump(html: str, response_dump_path: Optional[str]) -> None:
     """将当次响应页面保存到本地文件。"""
     if not response_dump_path:
@@ -135,9 +111,7 @@ def _compare_with_baseline(html: str, compare_with_path: Optional[str]) -> None:
 
 
 def parse_actors(html: str) -> list[dict[str, str]]:
-    """
-    解析收藏演员页面，返回演员信息列表。
-    """
+    """解析收藏演员页面，返回演员信息列表。"""
     soup = _build_soup(html)
     _log_interstitial_hint(soup)
     return _parse_actors_from_soup(soup)
@@ -150,10 +124,9 @@ def crawl_all_pages(
     collect_scope: str = "actor",
     fetch_config: FetchConfig | dict[str, Any] | None = None,
 ):
-    scope = normalize_collect_scope(collect_scope)
+    del collect_scope
     resolved_fetch_config = normalize_fetch_config(fetch_config)
 
-    # Cookie 解析逻辑集中在 utils.load_cookie_dict
     cookies: dict[str, Any] = {}
     if resolved_fetch_config.mode == "httpx":
         cookies = load_cookie_dict(cookie_json)
@@ -167,7 +140,6 @@ def crawl_all_pages(
             LOGGER.warning("浏览器模式未加载 Cookie，将优先使用持久化会话：%s", exc)
             cookies = {}
 
-    # 建议确保包含 over18=1 & cf_clearance & _jdb_session
     if resolved_fetch_config.mode == "httpx" or cookies:
         for must in ("over18", "cf_clearance", "_jdb_session"):
             if must not in cookies:
@@ -176,16 +148,16 @@ def crawl_all_pages(
     items: list[dict[str, str]] = []
     seen_hrefs: set[str] = set()
     with create_fetcher(cookies, resolved_fetch_config) as fetcher:
-        url = build_collect_start_url(scope)
+        url = _ACTOR_COLLECTION_URL
         page = 1
-        LOGGER.info("开始抓取收藏列表（scope=%s）", scope)
+        LOGGER.info("开始抓取收藏演员列表")
         while url:
             ensure_not_cancelled()
             LOGGER.info("抓取第 %d 页: %s", page, url)
             result = fetcher.fetch(
                 url,
-                expected_selector=expected_selector_for_scope(scope),
-                stage=f"collect_{scope}",
+                expected_selector=_ACTOR_COLLECTION_SELECTOR,
+                stage="collect_actors",
             )
             log_fetch_diagnostics(resolved_fetch_config.mode, result)
             html = result.html
@@ -198,11 +170,7 @@ def crawl_all_pages(
                 )
             soup = _build_soup(html)
             _log_interstitial_hint(soup)
-            actors = (
-                _parse_actors_from_soup(soup)
-                if scope == "actor"
-                else _parse_collections_from_soup(soup)
-            )
+            actors = _parse_actors_from_soup(soup)
 
             new_items: list[dict[str, str]] = []
             for actor in actors:
@@ -213,7 +181,7 @@ def crawl_all_pages(
                 new_items.append(actor)
 
             LOGGER.info(
-                "[page %d] 解析收藏项 %d 条（新增 %d 条）",
+                "[page %d] 解析收藏演员 %d 条（新增 %d 条）",
                 page,
                 len(actors),
                 len(new_items),
@@ -231,7 +199,7 @@ def crawl_all_pages(
                 sleep_with_cancel(random.uniform(0.8, 1.6))
             else:
                 url = None
-    LOGGER.info("爬取收藏列表完成（scope=%s），共 %d 条。", scope, len(items))
+    LOGGER.info("爬取收藏演员完成，共 %d 条。", len(items))
     return items
 
 
@@ -243,25 +211,19 @@ def run_collect_actors(
     collect_scope: str = "actor",
     fetch_config: FetchConfig | dict[str, Any] | None = None,
 ):
-    """
-    抓取收藏演员列表并写入 SQLite 数据库文件，返回抓取结果列表。
-    """
+    """抓取收藏演员列表并写入 SQLite 数据库文件，返回抓取结果列表。"""
+    del collect_scope
     data = crawl_all_pages(
         cookie_json,
         response_dump_path=response_dump_path,
         compare_with_path=compare_with_path,
-        collect_scope=collect_scope,
         fetch_config=fetch_config,
     )
-    scope = normalize_collect_scope(collect_scope)
-    LOGGER.info("收藏抓取结果（scope=%s）：%d 条。", scope, len(data))
+    LOGGER.info("收藏演员抓取结果：%d 条。", len(data))
     if data:
         with Storage(db_path) as store:
-            if scope == "actor":
-                saved = store.save_actors(data)
-            else:
-                saved = store.save_collections(scope, data)
-        LOGGER.info("收藏列表已写入数据库 %s（scope=%s，更新 %d 条）。", db_path, scope, saved)
+            saved = store.save_actors(data)
+        LOGGER.info("收藏演员已写入数据库 %s（更新 %d 条）。", db_path, saved)
     else:
         LOGGER.warning("未抓取到演员数据，未写入文件。")
     return data
@@ -289,12 +251,6 @@ if __name__ == "__main__":
         default=None,
         help="可选：与指定基准 HTML 做文本对比（如 debug/collection_actors.html）。",
     )
-    parser.add_argument(
-        "--collect-scope",
-        choices=["actor", "series", "maker", "director", "code"],
-        default="actor",
-        help="收藏维度：actor(默认)/series/maker/director/code。",
-    )
     args = parser.parse_args()
 
     run_collect_actors(
@@ -302,6 +258,5 @@ if __name__ == "__main__":
         db_path=args.db_path,
         response_dump_path=args.response_dump_path,
         compare_with_path=args.compare_with_path,
-        collect_scope=args.collect_scope,
         fetch_config=fetch_config_from_args(args),
     )

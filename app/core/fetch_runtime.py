@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any, Iterator, Literal, Mapping, Protocol, cast
 from urllib.parse import urlparse
 
-from config import BASE_URL, LOGGER, build_client
-from utils import build_soup, ensure_not_cancelled
+from app.core.config import BASE_URL, LOGGER, build_client
+from app.core.utils import build_soup, ensure_not_cancelled
 
 try:  # pragma: no cover - 运行环境兜底
     from playwright.sync_api import TimeoutError as PlaywrightTimeoutError

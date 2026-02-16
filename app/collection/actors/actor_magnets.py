@@ -3,8 +3,8 @@ import argparse
 import random
 from typing import Any, Dict, List, Optional, Sequence
 
-from config import LOGGER
-from fetch_runtime import (
+from app.core.config import LOGGER
+from app.core.fetch_runtime import (
     FetchConfig,
     add_fetch_mode_arguments,
     create_fetcher,
@@ -12,8 +12,8 @@ from fetch_runtime import (
     log_fetch_diagnostics,
     normalize_fetch_config,
 )
-from utils import build_soup
-from utils import (
+from app.core.utils import build_soup
+from app.core.utils import (
     clear_checkpoint,
     ensure_not_cancelled,
     load_checkpoint,
@@ -22,7 +22,7 @@ from utils import (
     save_checkpoint,
     sleep_with_cancel,
 )
-from storage import Storage
+from app.core.storage import Storage
 
 
 def parse_magnets(html: str) -> List[Dict[str, Any]]:

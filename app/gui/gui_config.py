@@ -72,9 +72,6 @@ def resolve_stored_path(value: str, runtime_root: Path) -> Path:
 
 
 def _normalize_collect_scope(value: str) -> str:
-    scope = (value or "").strip().lower()
-    if scope in {"actor", "series", "maker", "director", "code"}:
-        return scope
     return DEFAULT_COLLECT_SCOPE
 
 

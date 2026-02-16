@@ -4,8 +4,8 @@ import random
 from typing import Any, Optional, Sequence
 from urllib.parse import urljoin
 
-from config import BASE_URL, LOGGER
-from fetch_runtime import (
+from app.core.config import BASE_URL, LOGGER
+from app.core.fetch_runtime import (
     FetchConfig,
     add_fetch_mode_arguments,
     create_fetcher,
@@ -13,7 +13,7 @@ from fetch_runtime import (
     log_fetch_diagnostics,
     normalize_fetch_config,
 )
-from utils import (
+from app.core.utils import (
     build_actor_url,
     build_soup,
     clear_checkpoint,
@@ -25,7 +25,7 @@ from utils import (
     save_checkpoint,
     sleep_with_cancel,
 )
-from storage import Storage
+from app.core.storage import Storage
 
 
 def parse_works(html: str):

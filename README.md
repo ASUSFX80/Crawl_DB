@@ -1,31 +1,21 @@
-# crawljav 使用说明
+# crawljav（GUI 版）
 
-抓取 JavDB 收藏对象、作品与磁链数据，支持：
-
-- 命令行全流程执行
-- 分阶段抓取
-- GUI 可视化运行与数据浏览
+基于 PyQt5 的 JavDB 收藏抓取与数据浏览工具。
+当前以 GUI 为唯一入口，不再维护 CLI 工作流。
 
 ---
 
 ## 一、功能概览
 
-- 全流程抓取：收藏 -> 作品 -> 磁链 -> 磁链筛选
-- 收藏维度扩展：`actor / series / maker / director / code`
-- 双抓取模式：`httpx` 与 `browser`（Playwright 持久化会话）
-- GUI 支持：
-  - 作品多选批量导出磁链
-  - 右键复制（番号/标题/磁链）
-  - 番号/标题编辑并写回数据库
-- 本地 SQLite 存储，支持断点续跑和历史记录
+- GUI 一键流程：收藏抓取 -> 作品抓取 -> 磁链抓取 -> 磁链筛选
+- 收藏维度支持：`actor / series / maker / director / code`
+- 抓取模式：`browser`（默认，Playwright）与 `httpx`
+- 数据浏览能力：搜索、排序、筛选、批量导出、右键复制、作品编辑
+- 本地 SQLite 存储，支持断点续跑与历史记录
 
 ---
 
-## 二、快速开始
-
-### 1. 安装依赖
-
-推荐统一使用 `conda` 虚拟环境：
+## 二、环境准备（Conda）
 
 ```bash
 conda create -n crawljav python=3.11 -y
@@ -38,174 +28,90 @@ pip install -r requirements-mac.txt
 pip install -r requirements-win.txt
 ```
 
-如果你已经在现有 conda 环境中，也可直接安装兼容入口：
+可选兼容安装：
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 准备 Cookie
-
-在项目根目录创建 `cookie.json`，示例：
-
-```json
-{
-  "cookie": "over18=1; cf_clearance=xxx; _jdb_session=yyy"
-}
-```
-
-### 3. 初始化并运行
-
-```bash
-python main.py
-```
-
 ---
 
-## 三、运行方式
-
-以下命令默认在已激活的 conda 环境（`conda activate crawljav`）中执行。
-
-### 1. 一键全流程
-
-```bash
-python main.py \
-  --tags s,d
-```
-
-常见开关：
-
-- `--skip-collect`
-- `--skip-works`
-- `--skip-magnets`
-- `--collect-scope actor|series|maker|director|code`
-
-浏览器模式示例：
-
-```bash
-python main.py \
-  --fetch-mode browser \
-  --browser-user-data-dir userdata/browser_profile/javdb \
-  --challenge-timeout-seconds 240
-```
-
-非演员维度示例：
-
-```bash
-python main.py \
-  --collect-scope series \
-  --fetch-mode browser
-```
-
-### 2. GUI 运行
+## 三、启动 GUI
 
 ```bash
 python gui.py
 ```
 
-GUI 流程页支持收藏维度切换；数据浏览页支持搜索、排序、筛选、批量导出、右键复制和作品编辑。
-打包版 GUI 默认运行数据根目录为 `~/.crawljav`（源码运行仍使用当前工作目录）。
+首次使用建议：
 
----
-
-## 四、分步命令
-
-### 1. 收藏抓取
+1. 在“设置”页配置 Cookie、数据库路径、输出目录。
+2. 抓取模式优先使用 `browser`。
+3. 如遇浏览器依赖问题，执行：
 
 ```bash
-python get_collect_actors.py
-```
-
-调试响应落盘与对比：
-
-```bash
-python get_collect_actors.py \
-  --response-dump-path debug/collection_actors_runtime.html \
-  --compare-with-path debug/collection_actors.html
-```
-
-抓取收藏系列：
-
-```bash
-python get_collect_actors.py \
-  --collect-scope series \
-  --fetch-mode browser
-```
-
-说明：
-
-- `collect-scope=actor` 写入 `actors`
-- 其他维度写入 `collections`
-
-### 2. 作品抓取（演员维度）
-
-```bash
-python get_actor_works.py \
-  --tags s,d \
-  --actor-name 名1,名2
-```
-
-写入 `works`。
-
-### 3. 作品抓取（非演员维度）
-
-```bash
-python get_collect_scope_works.py \
-  --collect-scope series \
-  --fetch-mode browser
-```
-
-写入 `collection_works`。
-
-### 4. 磁链抓取（演员维度）
-
-```bash
-python get_works_magnet.py \
-  --actor-name 名1,名2
-```
-
-写入 `magnets`。
-
-### 5. 磁链抓取（非演员维度）
-
-```bash
-python get_collect_scope_magnets.py \
-  --collect-scope series \
-  --fetch-mode browser
-```
-
-写入 `collection_magnets`。
-
-### 6. 磁链筛选导出
-
-```bash
-python mdcx_magnets.py
-```
-
-仅处理单目录：
-
-```bash
-python mdcx_magnets.py userdata/magnets/坂井なるは --current-only --db userdata/actors.db
+python -m playwright install chromium
 ```
 
 ---
 
-## 五、参数速查（主流程）
+## 四、GUI 流程说明
 
-- `--cookie`：Cookie JSON 路径（默认 `cookie.json`）
-- `--db-path`：数据库路径（默认 `userdata/actors.db`）
-- `--magnets-dir`：导出目录（默认 `userdata/magnets`）
-- `--tags`：作品标签过滤（如 `s,d`）
-- `--collect-scope`：收藏维度（默认 `actor`）
-- `--fetch-mode`：`browser`（默认）或 `httpx`
-- `--browser-user-data-dir`：浏览器会话目录
-- `--browser-headless`：浏览器无头模式
-- `--browser-timeout-seconds`：页面超时
-- `--challenge-timeout-seconds`：人工验证等待时间
+### 1. 流程页
+
+- 勾选要执行的阶段（收藏、作品、磁链、筛选）
+- 选择收藏维度（`actor / series / maker / director / code`）
+- 点击“开始”直接执行（无二次确认弹窗）
+
+### 2. 数据浏览页
+
+- 按演员查看作品与磁链
+- 支持作品多选导出磁链
+- 支持复制番号/标题/磁链
+- 支持番号/标题编辑并写回数据库
+
+### 3. 设置页
+
+- 默认参数管理
+- Cookie 校验与保存
+- 历史记录查看
 
 ---
 
-## 六、输出目录与数据文件
+## 五、代码结构（已分层）
+
+```text
+app/
+  gui/            # GUI 入口、页面、配置读写、数据视图
+  collectors/     # 收藏抓取链路与维度注册
+    dimensions/   # actor/series/maker/director/code 五维度适配
+  core/           # 配置、抓取运行时、存储、通用工具
+  exporters/      # 磁链筛选导出
+```
+
+入口说明：
+- 根目录只保留 `gui.py` 作为 GUI 启动入口。
+- 业务与基础能力全部在 `app/` 下开发与维护。
+
+---
+
+## 六、后续模块规划（非 actor 收藏）
+
+在现有 `actor` 基础上，后续继续强化以下 4 个模块：
+
+- `series`（系列）
+- `director`（导演）
+- `maker`（片商）
+- `code`（番号）
+
+建议统一沿用 `app/collectors/` 下的同构流程：
+- 收藏抓取
+- 作品抓取
+- 磁链抓取
+- GUI 展示与筛选
+
+---
+
+## 七、输出与数据目录
 
 ```text
 userdata/
@@ -219,23 +125,9 @@ debug/
   *.html / *.png
 ```
 
-数据库包含：
-
+数据库主要表：
 - `actors / works / magnets`
 - `collections / collection_works / collection_magnets`
-
----
-
-## 七、浏览器模式说明
-
-`browser` 模式用于 Cloudflare/登录校验场景。
-
-- 优先复用持久化会话目录（手动过验证后可持续使用）
-- 若环境缺少可用浏览器，请安装 Chromium：
-
-```bash
-python -m playwright install chromium
-```
 
 ---
 
@@ -244,42 +136,3 @@ python -m playwright install chromium
 - 请遵守目标站点使用条款及相关法律法规。
 - 请控制抓取频率，避免高并发或短时间高频请求。
 - `cookie.json` 为敏感文件，不要上传到公开仓库。
-
----
-
-## 九、CI 打包说明
-
-GitHub Actions 发布工作流：
-
-- 平台：
-  - `windows-2022` -> `windows-x64.zip`
-  - `macos-14` -> `macos-arm64.dmg`
-- 流程：
-  1. 各平台构建并上传 artifact
-  2. 统一聚合 artifact 并发布 GitHub Release
-
-工作流文件：
-
-`/.github/workflows/release.yml`
-
----
-
-## 十、常见问题
-
-### 1. 抓取 0 条或 403
-
-- 优先使用 `--fetch-mode browser`
-- 复用同一 `--browser-user-data-dir`
-- 检查 Cookie 是否仍有效
-
-### 2. GUI 点了停止无效
-
-已支持可中断流程，若仍出现，请查看 `logs/` 日志定位具体阶段。
-
-### 3. browser 模式报浏览器不可用
-
-先确认本机有可用浏览器，再执行：
-
-```bash
-python -m playwright install chromium
-```

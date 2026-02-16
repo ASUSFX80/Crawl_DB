@@ -6,8 +6,8 @@ import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional
 
-from storage import Storage
-from utils import sanitize_filename
+from app.core.storage import Storage
+from app.core.utils import sanitize_filename
 
 
 LOGGER = logging.getLogger("crawljav.mdcx_magnets")
@@ -193,7 +193,7 @@ def main() -> None:
             level=logging.INFO,
             format="%(asctime)s [%(levelname)s] %(message)s",
         )
-    from utils import setup_daily_file_logger
+    from app.core.utils import setup_daily_file_logger
 
     setup_daily_file_logger()
     args = parse_args()

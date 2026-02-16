@@ -12,7 +12,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 LOGGER = logging.getLogger("crawljav")
-from utils import setup_daily_file_logger  # noqa: E402
+from app.core.utils import setup_daily_file_logger  # noqa: E402
 
 LOG_FILE_PATH = setup_daily_file_logger()
 

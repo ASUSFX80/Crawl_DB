@@ -6,11 +6,17 @@ from pathlib import Path
 import sys
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
-from collect_scopes import normalize_collect_scope
+_VALID_COLLECT_SCOPES = {"actor", "series", "maker", "director", "code"}
+
+
+def normalize_collect_scope(scope: str | None) -> str:
+    text = str(scope or "").strip().lower()
+    return text if text in _VALID_COLLECT_SCOPES else "actor"
 
 def _resolve_schema_file() -> Path:
     candidates = [
         Path(__file__).with_name("schema.sql"),
+        Path(__file__).resolve().parents[2] / "schema.sql",
         Path.cwd() / "schema.sql",
     ]
     base = getattr(sys, "_MEIPASS", None)

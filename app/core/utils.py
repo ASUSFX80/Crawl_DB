@@ -52,13 +52,13 @@ def sleep_with_cancel(seconds: float, *, step_seconds: float = 0.1) -> None:
 
 
 def _get_logger():
-    from config import LOGGER
+    from app.core.config import LOGGER
 
     return LOGGER
 
 
 def _get_base_url() -> str:
-    from config import BASE_URL
+    from app.core.config import BASE_URL
 
     return BASE_URL
 
