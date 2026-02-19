@@ -11,7 +11,11 @@ from typing import Literal
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from app.collection.actors.pipeline import get_actor_pipeline
-from app.core.config import LOGGER
+from app.core.config import (
+    LOGGER,
+    apply_base_domain_segment,
+    is_valid_base_domain_segment,
+)
 from app.core.fetch_runtime import FetchConfig
 from app.core.storage import Storage
 from app.core.utils import (
@@ -30,6 +34,7 @@ from app.gui.gui_config import (
     DEFAULT_CHALLENGE_TIMEOUT_SECONDS,
     DEFAULT_COLLECT_SCOPE,
     DEFAULT_COOKIE,
+    DEFAULT_BASE_DOMAIN_SEGMENT,
     DEFAULT_DB,
     DEFAULT_FETCH_MODE,
     DEFAULT_OUTPUT,
@@ -48,8 +53,6 @@ _RUNTIME_ROOT, _RUNTIME_FALLBACK_USED = select_runtime_root(
     home=Path.home(),
 )
 os.chdir(_RUNTIME_ROOT)
-
-
 
 
 class LogEmitter(QtCore.QObject):
@@ -120,7 +123,9 @@ class FlowWorker(QtCore.QObject):
     def request_cancel(self) -> None:
         self._cancel_requested = True
 
-    def _run_stage(self, index: int, total: int, label: str, func, *args, **kwargs) -> None:
+    def _run_stage(
+        self, index: int, total: int, label: str, func, *args, **kwargs
+    ) -> None:
         self.stage_changed.emit(label, index, total)
         func(*args, **kwargs)
 
@@ -230,7 +235,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._current_actor_rows: list[gdv.WorkViewRow] = []
         self._runtime_root_path = _RUNTIME_ROOT
         self._runtime_fallback_used = _RUNTIME_FALLBACK_USED
-        self._active_config_file = (self._runtime_root() / "config.ini").resolve(strict=False)
+        self._active_config_file = (self._runtime_root() / "config.ini").resolve(
+            strict=False
+        )
 
         self._log_emitter = LogEmitter()
         self._log_handler = QtLogHandler(self._log_emitter)
@@ -284,12 +291,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.tags_input = QtWidgets.QLineEdit()
         self.filter_mode_combo = QtWidgets.QComboBox()
-        self.filter_mode_combo.addItem("演员筛选", "actor")
-        self.filter_mode_combo.addItem("番号筛选", "code")
-        self.filter_mode_combo.addItem("系列筛选", "series")
+        self.filter_mode_combo.addItem("演员", "actor")
+        self.filter_mode_combo.addItem("番号", "code")
+        self.filter_mode_combo.addItem("系列", "series")
         self.filter_values_input = QtWidgets.QLineEdit()
         self.collect_scope_combo = QtWidgets.QComboBox()
-        self.collect_scope_combo.addItem("收藏维度: 演员", "actor")
+        self.collect_scope_combo.addItem("演员", "actor")
+        self.collect_scope_combo.addItem("系列", "actor")
+        self.collect_scope_combo.addItem("片商/卖家", "actor")
+        self.collect_scope_combo.addItem("导演", "actor")
+        self.collect_scope_combo.addItem("番号", "actor")
         self.filter_mode_combo.currentIndexChanged.connect(self._on_filter_mode_changed)
         self._on_filter_mode_changed()
 
@@ -545,7 +556,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.magnets_table.horizontalHeader().setStretchLastSection(True)
         self.magnets_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.magnets_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
-        self.magnets_table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.magnets_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.ExtendedSelection
+        )
         self.magnets_table.setMouseTracking(True)
         self.magnets_table.setStyleSheet(
             """
@@ -591,13 +604,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings_form.setContentsMargins(12, 12, 12, 12)
         self.settings_form.setHorizontalSpacing(10)
         self.settings_form.setVerticalSpacing(8)
-        self.settings_form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        self.settings_form.setFieldGrowthPolicy(
+            QtWidgets.QFormLayout.AllNonFixedFieldsGrow
+        )
         self.settings_form.setFormAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        self.settings_form.setLabelAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.settings_form.setLabelAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        )
         self.default_cookie = QtWidgets.QLineEdit("cookie.json")
         self.default_db = QtWidgets.QLineEdit("userdata/actors.db")
         self.default_output = QtWidgets.QLineEdit("userdata/magnets")
         self.delay_range = QtWidgets.QLineEdit("0.8-1.6")
+        self.base_domain_segment_input = QtWidgets.QLineEdit(
+            DEFAULT_BASE_DOMAIN_SEGMENT
+        )
+        self.base_domain_segment_input.setPlaceholderText("例如 javdb")
         self.default_fetch_mode_combo = QtWidgets.QComboBox()
         self.default_fetch_mode_combo.addItem("browser（默认，Playwright）", "browser")
         self.default_fetch_mode_combo.addItem("httpx", "httpx")
@@ -608,9 +629,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.default_browser_timeout_spin = QtWidgets.QSpinBox()
         self.default_browser_timeout_spin.setRange(5, 600)
         self.default_browser_timeout_spin.setValue(DEFAULT_BROWSER_TIMEOUT_SECONDS)
+        self.default_browser_timeout_spin.setFixedWidth(130)
         self.default_challenge_timeout_spin = QtWidgets.QSpinBox()
         self.default_challenge_timeout_spin.setRange(30, 3600)
         self.default_challenge_timeout_spin.setValue(DEFAULT_CHALLENGE_TIMEOUT_SECONDS)
+        self.default_challenge_timeout_spin.setFixedWidth(130)
         self.default_cookie_btn = QtWidgets.QPushButton("浏览")
         self.default_db_btn = QtWidgets.QPushButton("浏览")
         self.default_output_btn = QtWidgets.QPushButton("浏览")
@@ -627,6 +650,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.default_cookie,
             self.default_db,
             self.default_output,
+            self.base_domain_segment_input,
             self.default_browser_profile,
         ):
             widget.setSizePolicy(
@@ -666,14 +690,19 @@ class MainWindow(QtWidgets.QMainWindow):
         config_file_row.addWidget(self.config_save_as_btn)
         config_file_row.setStretch(0, 1)
         self.settings_form.addRow("延时范围 (s)", self.delay_range)
+        self.settings_form.addRow("站点域名", self.base_domain_segment_input)
         self.settings_form.addRow("抓取模式", self.default_fetch_mode_combo)
         default_browser_profile_row = QtWidgets.QHBoxLayout()
         default_browser_profile_row.addWidget(self.default_browser_profile)
         default_browser_profile_row.addWidget(default_browser_profile_btn)
         default_browser_profile_row.setStretch(0, 1)
         self.settings_form.addRow("浏览器会话目录", default_browser_profile_row)
-        self.settings_form.addRow("浏览器超时 (s)", self.default_browser_timeout_spin)
-        self.settings_form.addRow("验证等待 (s)", self.default_challenge_timeout_spin)
+        browser_timeout_row = QtWidgets.QHBoxLayout()
+        browser_timeout_row.addWidget(self.default_browser_timeout_spin)
+        browser_timeout_row.addWidget(QtWidgets.QLabel("验证等待 (s)"))
+        browser_timeout_row.addWidget(self.default_challenge_timeout_spin)
+        browser_timeout_row.addStretch(1)
+        self.settings_form.addRow("浏览器超时 (s)", browser_timeout_row)
         self.settings_form.addRow("Browser 选项", self.default_browser_headless_cb)
         self.settings_form.addRow("配置文件", config_file_row)
 
@@ -711,7 +740,9 @@ class MainWindow(QtWidgets.QMainWindow):
         left_stack.addWidget(cookie_box, stretch=1)
 
         settings_layout.addLayout(left_stack, stretch=3)
-        settings_layout.addWidget(self.history_box, stretch=1, alignment=QtCore.Qt.AlignRight)
+        settings_layout.addWidget(
+            self.history_box, stretch=1, alignment=QtCore.Qt.AlignRight
+        )
 
         self.pages.addWidget(settings_page)
 
@@ -745,7 +776,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _open_output_dir(self) -> None:
         path = resolve_stored_path(
-            self.default_output.text().strip() or str(DEFAULT_OUTPUT), self._runtime_root()
+            self.default_output.text().strip() or str(DEFAULT_OUTPUT),
+            self._runtime_root(),
         )
         if path.exists():
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(path)))
@@ -858,7 +890,9 @@ class MainWindow(QtWidgets.QMainWindow):
         return (self._runtime_root() / "config.ini").resolve(strict=False)
 
     def _restore_active_config_file(self) -> None:
-        stored = str(self._flow_settings().value("config/active_ini", "", type=str) or "").strip()
+        stored = str(
+            self._flow_settings().value("config/active_ini", "", type=str) or ""
+        ).strip()
         default_config = self._default_config_file_path()
         if not stored:
             self._active_config_file = default_config
@@ -929,7 +963,9 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "配置错误", "配置文件名不能为空。")
             return
         if "/" in filename or "\\" in filename:
-            QtWidgets.QMessageBox.warning(self, "配置错误", "配置文件名不能包含路径分隔符。")
+            QtWidgets.QMessageBox.warning(
+                self, "配置错误", "配置文件名不能包含路径分隔符。"
+            )
             return
         if not filename.lower().endswith(".ini"):
             filename = f"{filename}.ini"
@@ -1021,6 +1057,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._runtime_root(),
         )
         delay_range = self.delay_range.text().strip() or "0.8-1.6"
+        base_domain_segment = self.base_domain_segment_input.text()
         save_ini_config(
             config_file=target_file,
             runtime_root=self._runtime_root(),
@@ -1028,6 +1065,7 @@ class MainWindow(QtWidgets.QMainWindow):
             db_path=db_path,
             output_dir=output_dir,
             delay_range=delay_range,
+            base_domain_segment=base_domain_segment,
             fetch_mode=fetch_mode,
             collect_scope=str(collect_scope),
             browser_user_data_dir=browser_user_data_dir,
@@ -1044,9 +1082,14 @@ class MainWindow(QtWidgets.QMainWindow):
         db_path = Path(str(loaded["db"]))
         output_dir = Path(str(loaded["output_dir"]))
         delay = str(loaded["delay_range"])
+        base_domain_segment = str(
+            loaded.get("base_domain_segment", DEFAULT_BASE_DOMAIN_SEGMENT)
+        )
         fetch_mode = str(loaded.get("fetch_mode", DEFAULT_FETCH_MODE))
         collect_scope = str(loaded.get("collect_scope", DEFAULT_COLLECT_SCOPE))
-        browser_profile = Path(str(loaded.get("browser_user_data_dir", DEFAULT_BROWSER_USER_DATA_DIR)))
+        browser_profile = Path(
+            str(loaded.get("browser_user_data_dir", DEFAULT_BROWSER_USER_DATA_DIR))
+        )
         browser_headless = bool(loaded.get("browser_headless", False))
         browser_timeout = int(
             loaded.get("browser_timeout_seconds", DEFAULT_BROWSER_TIMEOUT_SECONDS)
@@ -1058,6 +1101,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.default_db.setText(str(db_path))
         self.default_output.setText(str(output_dir))
         self.delay_range.setText(delay)
+        self.base_domain_segment_input.setText(base_domain_segment)
         self._set_combo_value(self.default_fetch_mode_combo, fetch_mode)
         self.default_browser_profile.setText(str(browser_profile))
         self.default_browser_headless_cb.setChecked(browser_headless)
@@ -1099,7 +1143,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 pass
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("初始化数据库失败: %s", exc)
-            QtWidgets.QMessageBox.warning(self, "数据库错误", f"初始化数据库失败：{exc}")
+            QtWidgets.QMessageBox.warning(
+                self, "数据库错误", f"初始化数据库失败：{exc}"
+            )
 
     def _show_runtime_fallback_notice(self) -> None:
         QtWidgets.QMessageBox.information(
@@ -1159,13 +1205,15 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         cookie_path_obj = resolve_stored_path(
-            self.default_cookie.text().strip() or str(DEFAULT_COOKIE), self._runtime_root()
+            self.default_cookie.text().strip() or str(DEFAULT_COOKIE),
+            self._runtime_root(),
         )
         db_path_obj = resolve_stored_path(
             self.default_db.text().strip() or str(DEFAULT_DB), self._runtime_root()
         )
         output_dir_obj = resolve_stored_path(
-            self.default_output.text().strip() or str(DEFAULT_OUTPUT), self._runtime_root()
+            self.default_output.text().strip() or str(DEFAULT_OUTPUT),
+            self._runtime_root(),
         )
 
         cookie_path = str(cookie_path_obj)
@@ -1174,10 +1222,25 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.default_fetch_mode_combo.currentData() in ("httpx", "browser")
             else DEFAULT_FETCH_MODE
         )
+        base_domain_segment = self.base_domain_segment_input.text().strip()
+        if not is_valid_base_domain_segment(base_domain_segment):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "配置错误",
+                "站点域名无效，请填写 https:// 与 .com 之间的内容，例如 javdb。",
+            )
+            return
+        try:
+            apply_base_domain_segment(base_domain_segment)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "配置错误", f"站点域名无效：{exc}")
+            return
         collect_scope = "actor"
         if fetch_mode == "httpx":
             if not cookie_path:
-                QtWidgets.QMessageBox.warning(self, "缺少参数", "需要填写 Cookie 路径。")
+                QtWidgets.QMessageBox.warning(
+                    self, "缺少参数", "需要填写 Cookie 路径。"
+                )
                 return
             try:
                 cookies = load_cookie_dict(cookie_path)
@@ -1185,22 +1248,30 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.warning(self, "Cookie 错误", str(exc))
                 return
             if not is_cookie_valid(cookies):
-                QtWidgets.QMessageBox.warning(self, "Cookie 错误", "Cookie 看起来无效。")
+                QtWidgets.QMessageBox.warning(
+                    self, "Cookie 错误", "Cookie 看起来无效。"
+                )
                 return
         else:
             if cookie_path:
                 try:
                     cookies = load_cookie_dict(cookie_path)
                     if not is_cookie_valid(cookies):
-                        LOGGER.warning("浏览器模式下 Cookie 校验未通过，将继续使用持久化会话。")
+                        LOGGER.warning(
+                            "浏览器模式下 Cookie 校验未通过，将继续使用持久化会话。"
+                        )
                 except SystemExit as exc:
-                    LOGGER.warning("浏览器模式下未加载 Cookie，将继续使用持久化会话：%s", exc)
+                    LOGGER.warning(
+                        "浏览器模式下未加载 Cookie，将继续使用持久化会话：%s", exc
+                    )
 
         filter_mode = self._current_filter_mode()
         filter_values = self._parse_filter_values(self.filter_values_input.text())
         if filter_mode in ("code", "series"):
             if not filter_values:
-                QtWidgets.QMessageBox.warning(self, "缺少筛选值", "请至少输入一个筛选值。")
+                QtWidgets.QMessageBox.warning(
+                    self, "缺少筛选值", "请至少输入一个筛选值。"
+                )
                 return
 
         self.log_view.clear()
@@ -1332,7 +1403,8 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, "提示", "请粘贴 Cookie 内容。")
             return
         cookie_path = resolve_stored_path(
-            self.default_cookie.text().strip() or str(DEFAULT_COOKIE), self._runtime_root()
+            self.default_cookie.text().strip() or str(DEFAULT_COOKIE),
+            self._runtime_root(),
         )
         cookies = None
         payload: dict | None = None
@@ -1440,7 +1512,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _refresh_data_view(self, reset_actor: bool = False) -> None:
         current_actor = "" if reset_actor else self._current_actor_name()
         self._active_view_rows = self._apply_data_filters(self._all_view_rows)
-        actor_desc = (self.actor_sort_combo.currentData() or "actor_asc") == "actor_desc"
+        actor_desc = (
+            self.actor_sort_combo.currentData() or "actor_asc"
+        ) == "actor_desc"
         actor_names = gdv.sort_actor_names(self._active_view_rows, desc=actor_desc)
         empty_text = "暂无演员数据。" if not self._all_view_rows else "无匹配结果。"
         self._populate_actor_list(actor_names, empty_text=empty_text)
@@ -1452,7 +1526,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.result_count_label.setText("演员: 0 | 作品: 0")
             return
 
-        actor_to_select = current_actor if current_actor in actor_names else actor_names[0]
+        actor_to_select = (
+            current_actor if current_actor in actor_names else actor_names[0]
+        )
         self._select_actor_by_name(actor_to_select)
         self.result_count_label.setText(
             f"演员: {len(actor_names)} | 作品: {len(self._active_view_rows)}"
@@ -1471,7 +1547,9 @@ class MainWindow(QtWidgets.QMainWindow):
             return ""
         return items[0].text()
 
-    def _populate_actor_list(self, names: list[str], empty_text: str = "暂无演员数据。") -> None:
+    def _populate_actor_list(
+        self, names: list[str], empty_text: str = "暂无演员数据。"
+    ) -> None:
         self.actor_list.clear()
         if not names:
             self.actor_list.addItem(empty_text)
@@ -1487,7 +1565,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if actor_name in ("暂无演员数据。", "无匹配结果。"):
             self._current_actor_rows = []
             return
-        works_rows = [row for row in self._active_view_rows if row["actor"] == actor_name]
+        works_rows = [
+            row for row in self._active_view_rows if row["actor"] == actor_name
+        ]
         works_sort = self.works_sort_combo.currentData() or "code_asc"
         work_key: gdv.WorkSortKey = (
             "code" if str(works_sort).startswith("code_") else "title"
@@ -1536,7 +1616,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.works_table.resizeColumnsToContents()
 
     def _selected_work_rows(self) -> list[gdv.WorkViewRow]:
-        selected_indexes = sorted({index.row() for index in self.works_table.selectedIndexes()})
+        selected_indexes = sorted(
+            {index.row() for index in self.works_table.selectedIndexes()}
+        )
         rows: list[gdv.WorkViewRow] = []
         for row_index in selected_indexes:
             if 0 <= row_index < len(self._current_actor_rows):
@@ -1667,7 +1749,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_actor_selected()
             return
 
-        QtWidgets.QMessageBox.information(self, "完成", f"已保存 {len(pending_changes)} 条修改。")
+        QtWidgets.QMessageBox.information(
+            self, "完成", f"已保存 {len(pending_changes)} 条修改。"
+        )
         self._load_data(reset_actor=False)
 
     def _populate_magnets_table(self, magnets: list[dict]) -> None:

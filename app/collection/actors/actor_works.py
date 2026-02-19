@@ -4,7 +4,8 @@ import random
 from typing import Any, Optional, Sequence
 from urllib.parse import urljoin
 
-from app.core.config import BASE_URL, LOGGER
+import app.core.config as app_config
+from app.core.config import LOGGER
 from app.core.fetch_runtime import (
     FetchConfig,
     add_fetch_mode_arguments,
@@ -26,6 +27,10 @@ from app.core.utils import (
     sleep_with_cancel,
 )
 from app.core.storage import Storage
+
+
+def _base_url() -> str:
+    return app_config.BASE_URL
 
 
 def parse_works(html: str):
@@ -58,7 +63,7 @@ def parse_works(html: str):
         a = card.select_one("a[href]")
         if not a:
             continue
-        href = urljoin(BASE_URL, a["href"])
+        href = urljoin(_base_url(), a["href"])
         strong = a.select_one("div.video-title > strong")
         code = strong.get_text(strip=True) if strong else ""
         title_node = a.select_one("div.video-title")
@@ -195,7 +200,7 @@ def run_actor_works(
         for i, (actor_name, href) in enumerate(actors[start_index:], start=start_index):
             ensure_not_cancelled()
             existing_codes = {w["code"] for w in store.get_actor_works(actor_name)}
-            start_url = build_actor_url(BASE_URL, href, tags_list)
+            start_url = build_actor_url(_base_url(), href, tags_list)
             LOGGER.info("开始处理演员：%s", actor_name)
             if tags_list:
                 LOGGER.info("使用标签过滤：%s", ",".join(tags_list))

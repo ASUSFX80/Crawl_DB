@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any, Iterator, Literal, Mapping, Protocol, cast
 from urllib.parse import urlparse
 
-from app.core.config import BASE_URL, LOGGER, build_client
+import app.core.config as app_config
+from app.core.config import LOGGER, build_client
 from app.core.utils import build_soup, ensure_not_cancelled
 
 try:  # pragma: no cover - 运行环境兜底
@@ -289,7 +290,7 @@ class PlaywrightPageFetcher:
 
 
 def _to_playwright_cookies(cookies: Mapping[str, Any]) -> list[dict[str, Any]]:
-    host = urlparse(BASE_URL).hostname or "javdb.com"
+    host = urlparse(app_config.BASE_URL).hostname or "javdb.com"
     output: list[dict[str, Any]] = []
     for key, value in cookies.items():
         if value is None:

@@ -11,10 +11,11 @@ DEFAULT_OUTPUT = Path("userdata") / "magnets"
 DEFAULT_DELAY_RANGE = "0.8-1.6"
 DEFAULT_FETCH_MODE = "browser"
 DEFAULT_COLLECT_SCOPE = "actor"
+DEFAULT_BASE_DOMAIN_SEGMENT = "javdb"
 DEFAULT_BROWSER_USER_DATA_DIR = Path("userdata") / "browser_profile" / "javdb"
 DEFAULT_BROWSER_HEADLESS = False
 DEFAULT_BROWSER_TIMEOUT_SECONDS = 30
-DEFAULT_CHALLENGE_TIMEOUT_SECONDS = 180
+DEFAULT_CHALLENGE_TIMEOUT_SECONDS = 60
 
 
 def is_writable_dir(path: Path) -> bool:
@@ -28,7 +29,9 @@ def is_writable_dir(path: Path) -> bool:
         return False
 
 
-def select_runtime_root(*, frozen: bool, executable: str, cwd: Path, home: Path) -> tuple[Path, bool]:
+def select_runtime_root(
+    *, frozen: bool, executable: str, cwd: Path, home: Path
+) -> tuple[Path, bool]:
     if frozen:
         preferred = (home / ".crawljav").resolve()
         if is_writable_dir(preferred):
@@ -108,6 +111,11 @@ def load_ini_config(config_file: Path, runtime_root: Path) -> Dict[str, object]:
         "challenge_timeout_seconds",
         fallback=DEFAULT_CHALLENGE_TIMEOUT_SECONDS,
     )
+    base_domain_segment = parser.get(
+        "site",
+        "base_domain_segment",
+        fallback=DEFAULT_BASE_DOMAIN_SEGMENT,
+    )
     migrated = parser.getboolean("meta", "migrated_from_legacy", fallback=False)
     return {
         "cookie": resolve_stored_path(cookie, runtime_root),
@@ -122,6 +130,7 @@ def load_ini_config(config_file: Path, runtime_root: Path) -> Dict[str, object]:
         "browser_headless": browser_headless,
         "browser_timeout_seconds": browser_timeout_seconds,
         "challenge_timeout_seconds": challenge_timeout_seconds,
+        "base_domain_segment": base_domain_segment,
         "migrated_from_legacy": migrated,
     }
 
@@ -136,6 +145,7 @@ def save_ini_config(
     delay_range: str,
     fetch_mode: str = DEFAULT_FETCH_MODE,
     collect_scope: str = DEFAULT_COLLECT_SCOPE,
+    base_domain_segment: str = DEFAULT_BASE_DOMAIN_SEGMENT,
     browser_user_data_dir: Optional[Path] = None,
     browser_headless: bool = DEFAULT_BROWSER_HEADLESS,
     browser_timeout_seconds: int = DEFAULT_BROWSER_TIMEOUT_SECONDS,
@@ -150,7 +160,9 @@ def save_ini_config(
     }
     parser["ui"] = {"delay_range": delay_range or DEFAULT_DELAY_RANGE}
     parser["fetch"] = {
-        "mode": fetch_mode if fetch_mode in ("httpx", "browser") else DEFAULT_FETCH_MODE,
+        "mode": fetch_mode
+        if fetch_mode in ("httpx", "browser")
+        else DEFAULT_FETCH_MODE,
         "collect_scope": _normalize_collect_scope(collect_scope),
         "browser_user_data_dir": to_storable_path(
             browser_user_data_dir or (runtime_root / DEFAULT_BROWSER_USER_DATA_DIR),
@@ -164,7 +176,12 @@ def save_ini_config(
             int(challenge_timeout_seconds or DEFAULT_CHALLENGE_TIMEOUT_SECONDS)
         ),
     }
-    parser["meta"] = {"migrated_from_legacy": "true" if migrated_from_legacy else "false"}
+    parser["site"] = {
+        "base_domain_segment": str(base_domain_segment),
+    }
+    parser["meta"] = {
+        "migrated_from_legacy": "true" if migrated_from_legacy else "false"
+    }
     config_file.parent.mkdir(parents=True, exist_ok=True)
     with config_file.open("w", encoding="utf-8") as fp:
         parser.write(fp)
@@ -188,9 +205,10 @@ def migrate_legacy_config_once(
         "delay_range": DEFAULT_DELAY_RANGE,
         "fetch_mode": DEFAULT_FETCH_MODE,
         "collect_scope": DEFAULT_COLLECT_SCOPE,
-        "browser_user_data_dir": (
-            runtime_root / DEFAULT_BROWSER_USER_DATA_DIR
-        ).resolve(strict=False),
+        "base_domain_segment": DEFAULT_BASE_DOMAIN_SEGMENT,
+        "browser_user_data_dir": (runtime_root / DEFAULT_BROWSER_USER_DATA_DIR).resolve(
+            strict=False
+        ),
         "browser_headless": DEFAULT_BROWSER_HEADLESS,
         "browser_timeout_seconds": DEFAULT_BROWSER_TIMEOUT_SECONDS,
         "challenge_timeout_seconds": DEFAULT_CHALLENGE_TIMEOUT_SECONDS,
@@ -242,6 +260,7 @@ def migrate_legacy_config_once(
         delay_range=str(defaults["delay_range"]),
         fetch_mode=str(defaults["fetch_mode"]),
         collect_scope=str(defaults["collect_scope"]),
+        base_domain_segment=str(defaults["base_domain_segment"]),
         browser_user_data_dir=Path(defaults["browser_user_data_dir"]),
         browser_headless=bool(defaults["browser_headless"]),
         browser_timeout_seconds=int(defaults["browser_timeout_seconds"]),
@@ -251,7 +270,9 @@ def migrate_legacy_config_once(
     return load_ini_config(config_file, runtime_root)
 
 
-def _resolve_legacy_setting_path(value: str, *, runtime_root: Path, legacy_root: Path) -> Path:
+def _resolve_legacy_setting_path(
+    value: str, *, runtime_root: Path, legacy_root: Path
+) -> Path:
     path = Path(value).expanduser()
     if path.is_absolute():
         return path.resolve(strict=False)

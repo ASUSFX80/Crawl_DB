@@ -8,7 +8,8 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
-from app.core.config import BASE_URL, LOGGER
+import app.core.config as app_config
+from app.core.config import LOGGER
 from app.core.fetch_runtime import (
     FetchConfig,
     add_fetch_mode_arguments,
@@ -26,8 +27,15 @@ from app.core.utils import (
     sleep_with_cancel,
 )
 
-_ACTOR_COLLECTION_URL = f"{BASE_URL}/users/collection_actors"
 _ACTOR_COLLECTION_SELECTOR = "div#actors div.box.actor-box"
+
+
+def _base_url() -> str:
+    return app_config.BASE_URL
+
+
+def _actor_collection_url() -> str:
+    return f"{_base_url()}/users/collection_actors"
 
 
 def _build_soup(html: str) -> BeautifulSoup:
@@ -59,7 +67,7 @@ def _parse_actor_box(box: Tag) -> Optional[dict[str, str]]:
     if not anchor:
         return None
     href_raw = anchor.get("href") or ""
-    href = urljoin(BASE_URL, href_raw) if href_raw else ""
+    href = urljoin(_base_url(), href_raw) if href_raw else ""
     strong = box.select_one("strong")
     name = strong.get_text(strip=True) if strong else anchor.get_text(strip=True)
     if not href or not name:
@@ -148,7 +156,7 @@ def crawl_all_pages(
     items: list[dict[str, str]] = []
     seen_hrefs: set[str] = set()
     with create_fetcher(cookies, resolved_fetch_config) as fetcher:
-        url = _ACTOR_COLLECTION_URL
+        url = _actor_collection_url()
         page = 1
         LOGGER.info("开始抓取收藏演员列表")
         while url:

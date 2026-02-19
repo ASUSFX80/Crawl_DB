@@ -1,7 +1,22 @@
-# crawljav（GUI 版）
+# crawljav
 
 基于 PyQt5 的 JavDB 收藏抓取与数据浏览工具。
-当前以 GUI 为唯一入口，不再维护 CLI 工作流。
+
+<p><b>如果 crawljav 让您的使用更便捷，可以考虑为我买杯咖啡。这将有助于持续更新！<br>通过微信或者支付宝支持：</b></p>
+  <table align="center" border="0" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center">
+        <img src="docs/assets/wechat-sponsor.png" alt="WeChat Pay" height="160"><br>
+        <sub><b>WeChat Pay</b></sub>
+      </td>
+      <td align="center">
+        <img src="docs/assets/alipay-sponsor.png" alt="Alipay" height="160"><br>
+        <sub><b>Alipay</b></sub>
+      </td>
+    </tr>
+  </table>
+
+
 
 ---
 
@@ -139,18 +154,3 @@ debug/
 - 请遵守目标站点使用条款及相关法律法规。
 - 请控制抓取频率，避免高并发或短时间高频请求。
 - `cookie.json` 为敏感文件，不要上传到公开仓库。
-
-<p><b>如果 crawljav 让您的使用更便捷，可以考虑为我买杯咖啡。这将有助于持续更新！<br>通过微信或者支付宝支持：</b></p>
-  <table align="center" border="0" cellpadding="0" cellspacing="0">
-    <tr>
-      <td align="center">
-        <img src="docs/assets/wechat-sponsor.png" alt="WeChat Pay" height="160"><br>
-        <sub><b>WeChat Pay</b></sub>
-      </td>
-      <td align="center">
-        <img src="docs/assets/alipay-sponsor.png" alt="Alipay" height="160"><br>
-        <sub><b>Alipay</b></sub>
-      </td>
-    </tr>
-  </table>
-
