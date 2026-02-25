@@ -1,0 +1,48 @@
+[MASTER]
+jobs=1
+ignore=build,dist,userdata,__pycache__,.venv,.pytest_cache
+persistent=no
+
+[MESSAGES CONTROL]
+disable=
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    too-few-public-methods,
+    protected-access,
+    import-outside-toplevel,
+    consider-using-from-import,
+    wrong-import-position,
+    broad-exception-caught,
+    broad-exception-raised,
+    duplicate-code,
+    fixme,
+    line-too-long,
+    unused-argument,
+    too-many-public-methods,
+    too-many-lines,
+    too-many-instance-attributes,
+    too-many-arguments,
+    too-many-locals,
+    too-many-branches,
+    too-many-positional-arguments,
+    too-many-statements,
+    too-many-return-statements,
+    invalid-name,
+    global-statement,
+    redefined-argument-from-local,
+    cyclic-import,
+    raise-missing-from,
+    consider-using-with,
+    no-self-argument,
+    no-member
+
+[FORMAT]
+max-line-length=80
+indent-string='    '
+
+[BASIC]
+good-names=i,j,k,ex,Run,_,id,db
+
+[TYPECHECK]
+ignored-modules=PyQt5

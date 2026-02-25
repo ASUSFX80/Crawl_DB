@@ -1,0 +1,40 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Python cache / virtual env
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local runtime data (do not commit)
+logs/
+debug/
+userdata/
+config.ini
+
+# Secrets / local credentials
+cookie.json
+
+# Build artifacts
+build/
+dist/
+*.spec.bak
+*.dmg
+*.zip
+*.exe
+
+# Local tool state
+.agent/
+.codex/
+.opencode/
+.shared/
+
+# Playwright local browser cache (if downloaded into project)
+ms-playwright/
