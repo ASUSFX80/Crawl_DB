@@ -1,3 +1,0 @@
--r requirements-common.txt
--r requirements-win.txt
--r requirements-mac.txt
