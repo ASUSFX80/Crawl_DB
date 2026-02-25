@@ -139,8 +139,7 @@ def load_cookie_dict(cookie_json_path: str = "cookie.json") -> Dict[str, Any]:
                  ) and "cookie" in data and isinstance(data["cookie"], str):
         cookies = parse_cookie_string(data["cookie"])
     elif (
-        isinstance(data, dict)
-        and "cookies" in data
+        isinstance(data, dict) and "cookies" in data
         and isinstance(data["cookies"], list)
     ):
         cookie_items = [
@@ -151,7 +150,9 @@ def load_cookie_dict(cookie_json_path: str = "cookie.json") -> Dict[str, Any]:
     elif isinstance(data, list):
         cookie_items = [item for item in data if isinstance(item, dict)]
         if len(cookie_items) != len(data):
-            raise SystemExit(f"Cookie 文件格式无效，期望 cookies 为对象数组：{cookie_json_path}")
+            raise SystemExit(
+                f"Cookie 文件格式无效，期望 cookies 为对象数组：{cookie_json_path}"
+            )
         cookies = _cookie_items_to_name_value_dict(cookie_items)
         cookies[PLAYWRIGHT_COOKIE_ITEMS_KEY] = cookie_items
     elif isinstance(data, dict):

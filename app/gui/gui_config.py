@@ -171,8 +171,8 @@ def save_ini_config(
     parser["ui"] = {"delay_range": delay_range or DEFAULT_DELAY_RANGE}
     parser["fetch"] = {
         "mode":
-            fetch_mode if fetch_mode in ("httpx", "browser")
-            else DEFAULT_FETCH_MODE,
+            fetch_mode if fetch_mode in ("httpx",
+                                         "browser") else DEFAULT_FETCH_MODE,
         "collect_scope":
             _normalize_collect_scope(collect_scope),
         "browser_user_data_dir":

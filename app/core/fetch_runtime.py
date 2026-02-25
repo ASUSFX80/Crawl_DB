@@ -64,9 +64,7 @@ def add_fetch_mode_arguments(parser: argparse.ArgumentParser) -> None:
         "--fetch-mode",
         choices=["httpx", "browser"],
         default="browser",
-        help=(
-            "抓取模式：browser（默认，Playwright 持久化会话）或 httpx。"
-        ),
+        help=("抓取模式：browser（默认，Playwright 持久化会话）或 httpx。"),
     )
     parser.add_argument(
         "--browser-user-data-dir",
@@ -401,9 +399,9 @@ def _normalize_playwright_cookies(
 
     if isinstance(cookies, Mapping):
         cookie_items = cookies.get(PLAYWRIGHT_COOKIE_ITEMS_KEY)
-        if isinstance(cookie_items, Sequence) and not isinstance(
-            cookie_items, (str, bytes, bytearray)
-        ):
+        if isinstance(
+            cookie_items, Sequence
+        ) and not isinstance(cookie_items, (str, bytes, bytearray)):
             for item in cookie_items:
                 if isinstance(item, Mapping):
                     _append_item(item)
@@ -420,7 +418,10 @@ def _normalize_playwright_cookies(
                 dropped += 1
                 continue
             normalized = _normalize_cookie_item(
-                {"name": name, "value": value},
+                {
+                    "name": name,
+                    "value": value
+                },
                 default_host=default_host,
             )
             if normalized is None:
@@ -447,7 +448,8 @@ def _normalize_playwright_cookies(
 def _to_playwright_cookies(
     cookies: Mapping[str, Any] | Sequence[Mapping[str, Any]]
 ) -> list[dict[str, Any]]:
-    host = (urlparse(app_config.BASE_URL).hostname or "javdb.com").strip().lower()
+    host = (urlparse(app_config.BASE_URL).hostname
+            or "javdb.com").strip().lower()
     return _normalize_playwright_cookies(cookies, default_host=host)
 
 
@@ -473,7 +475,9 @@ def _coerce_cookie_store(
     return cookie_dict
 
 
-def _extract_httpx_cookie_dict(cookie_store: Mapping[str, Any]) -> dict[str, str]:
+def _extract_httpx_cookie_dict(
+    cookie_store: Mapping[str, Any]
+) -> dict[str, str]:
     output: dict[str, str] = {}
     for key, value in cookie_store.items():
         if key == PLAYWRIGHT_COOKIE_ITEMS_KEY:
@@ -531,9 +535,7 @@ def _launch_persistent_context_with_fallback(
             LOGGER.warning("浏览器通道 %s 启动失败，将尝试其他通道：%s", channel, exc)
             continue
 
-    raise RuntimeError(
-        "未找到可用浏览器。请先在本机安装 Chrome 或 Edge 后重试。"
-    ) from last_error
+    raise RuntimeError("未找到可用浏览器。请先在本机安装 Chrome 或 Edge 后重试。") from last_error
 
 
 def _configure_playwright_runtime_environment() -> None:
@@ -569,9 +571,7 @@ def create_fetcher(
         return
 
     if resolved.mode == "browser" and sync_playwright is None:
-        raise RuntimeError(
-            "浏览器模式依赖 playwright，请先安装依赖并确保本机已安装 Chrome/Edge。"
-        )
+        raise RuntimeError("浏览器模式依赖 playwright，请先安装依赖并确保本机已安装 Chrome/Edge。")
 
     if resolved.mode == "browser":
         _configure_playwright_runtime_environment()
@@ -591,10 +591,15 @@ def create_fetcher(
                     try:
                         browser_cookies = _to_playwright_cookies(cookie_store)
                         if browser_cookies:
-                            LOGGER.info("browser 模式注入 Cookie %d 条。", len(browser_cookies))
+                            LOGGER.info(
+                                "browser 模式注入 Cookie %d 条。",
+                                len(browser_cookies)
+                            )
                             context.add_cookies(browser_cookies)
                         else:
-                            LOGGER.warning("browser 模式没有可注入 Cookie，将仅依赖 profile。")
+                            LOGGER.warning(
+                                "browser 模式没有可注入 Cookie，将仅依赖 profile。"
+                            )
                     except Exception as exc:
                         LOGGER.warning(
                             "浏览器模式注入 Cookie 失败，将继续使用现有 profile：%s", exc

@@ -1313,9 +1313,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Cookie 错误", str(exc))
             return
         if not is_cookie_valid(cookies):
-            QtWidgets.QMessageBox.warning(
-                self, "Cookie 错误", "Cookie 看起来无效。"
-            )
+            QtWidgets.QMessageBox.warning(self, "Cookie 错误", "Cookie 看起来无效。")
             return
 
         filter_mode = self._current_filter_mode()
@@ -1776,12 +1774,9 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         QtWidgets.QApplication.clipboard().setText(actor_name)
 
-    def eventFilter(
-        self, obj: QtCore.QObject, event: QtCore.QEvent
-    ) -> bool:
-        if event.type() == QtCore.QEvent.KeyPress and isinstance(
-            event, QtGui.QKeyEvent
-        ):
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        if event.type(
+        ) == QtCore.QEvent.KeyPress and isinstance(event, QtGui.QKeyEvent):
             if event.matches(QtGui.QKeySequence.Copy):
                 if obj is self.actor_list:
                     self._copy_selected_actor_name()
