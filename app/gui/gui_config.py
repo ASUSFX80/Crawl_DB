@@ -118,20 +118,30 @@ def load_ini_config(config_file: Path, runtime_root: Path) -> Dict[str, object]:
     )
     migrated = parser.getboolean("meta", "migrated_from_legacy", fallback=False)
     return {
-        "cookie": resolve_stored_path(cookie, runtime_root),
-        "db": resolve_stored_path(db_path, runtime_root),
-        "output_dir": resolve_stored_path(output_dir, runtime_root),
-        "delay_range": delay_range,
-        "fetch_mode": fetch_mode,
-        "collect_scope": collect_scope,
-        "browser_user_data_dir": resolve_stored_path(
-            browser_user_data_dir, runtime_root
-        ),
-        "browser_headless": browser_headless,
-        "browser_timeout_seconds": browser_timeout_seconds,
-        "challenge_timeout_seconds": challenge_timeout_seconds,
-        "base_domain_segment": base_domain_segment,
-        "migrated_from_legacy": migrated,
+        "cookie":
+            resolve_stored_path(cookie, runtime_root),
+        "db":
+            resolve_stored_path(db_path, runtime_root),
+        "output_dir":
+            resolve_stored_path(output_dir, runtime_root),
+        "delay_range":
+            delay_range,
+        "fetch_mode":
+            fetch_mode,
+        "collect_scope":
+            collect_scope,
+        "browser_user_data_dir":
+            resolve_stored_path(browser_user_data_dir, runtime_root),
+        "browser_headless":
+            browser_headless,
+        "browser_timeout_seconds":
+            browser_timeout_seconds,
+        "challenge_timeout_seconds":
+            challenge_timeout_seconds,
+        "base_domain_segment":
+            base_domain_segment,
+        "migrated_from_legacy":
+            migrated,
     }
 
 
@@ -160,21 +170,30 @@ def save_ini_config(
     }
     parser["ui"] = {"delay_range": delay_range or DEFAULT_DELAY_RANGE}
     parser["fetch"] = {
-        "mode": fetch_mode
-        if fetch_mode in ("httpx", "browser")
-        else DEFAULT_FETCH_MODE,
-        "collect_scope": _normalize_collect_scope(collect_scope),
-        "browser_user_data_dir": to_storable_path(
-            browser_user_data_dir or (runtime_root / DEFAULT_BROWSER_USER_DATA_DIR),
-            runtime_root,
-        ),
-        "browser_headless": "true" if browser_headless else "false",
-        "browser_timeout_seconds": str(
-            int(browser_timeout_seconds or DEFAULT_BROWSER_TIMEOUT_SECONDS)
-        ),
-        "challenge_timeout_seconds": str(
-            int(challenge_timeout_seconds or DEFAULT_CHALLENGE_TIMEOUT_SECONDS)
-        ),
+        "mode":
+            fetch_mode if fetch_mode in ("httpx", "browser")
+            else DEFAULT_FETCH_MODE,
+        "collect_scope":
+            _normalize_collect_scope(collect_scope),
+        "browser_user_data_dir":
+            to_storable_path(
+                browser_user_data_dir
+                or (runtime_root / DEFAULT_BROWSER_USER_DATA_DIR),
+                runtime_root,
+            ),
+        "browser_headless":
+            "true" if browser_headless else "false",
+        "browser_timeout_seconds":
+            str(
+                int(browser_timeout_seconds or DEFAULT_BROWSER_TIMEOUT_SECONDS)
+            ),
+        "challenge_timeout_seconds":
+            str(
+                int(
+                    challenge_timeout_seconds
+                    or DEFAULT_CHALLENGE_TIMEOUT_SECONDS
+                )
+            ),
     }
     parser["site"] = {
         "base_domain_segment": str(base_domain_segment),
@@ -202,16 +221,23 @@ def migrate_legacy_config_once(
         "cookie": (runtime_root / DEFAULT_COOKIE).resolve(strict=False),
         "db": (runtime_root / DEFAULT_DB).resolve(strict=False),
         "output_dir": (runtime_root / DEFAULT_OUTPUT).resolve(strict=False),
-        "delay_range": DEFAULT_DELAY_RANGE,
-        "fetch_mode": DEFAULT_FETCH_MODE,
-        "collect_scope": DEFAULT_COLLECT_SCOPE,
-        "base_domain_segment": DEFAULT_BASE_DOMAIN_SEGMENT,
-        "browser_user_data_dir": (runtime_root / DEFAULT_BROWSER_USER_DATA_DIR).resolve(
-            strict=False
-        ),
-        "browser_headless": DEFAULT_BROWSER_HEADLESS,
-        "browser_timeout_seconds": DEFAULT_BROWSER_TIMEOUT_SECONDS,
-        "challenge_timeout_seconds": DEFAULT_CHALLENGE_TIMEOUT_SECONDS,
+        "delay_range":
+            DEFAULT_DELAY_RANGE,
+        "fetch_mode":
+            DEFAULT_FETCH_MODE,
+        "collect_scope":
+            DEFAULT_COLLECT_SCOPE,
+        "base_domain_segment":
+            DEFAULT_BASE_DOMAIN_SEGMENT,
+        "browser_user_data_dir":
+            (runtime_root /
+             DEFAULT_BROWSER_USER_DATA_DIR).resolve(strict=False),
+        "browser_headless":
+            DEFAULT_BROWSER_HEADLESS,
+        "browser_timeout_seconds":
+            DEFAULT_BROWSER_TIMEOUT_SECONDS,
+        "challenge_timeout_seconds":
+            DEFAULT_CHALLENGE_TIMEOUT_SECONDS,
     }
 
     legacy_values = {
@@ -230,7 +256,9 @@ def migrate_legacy_config_once(
         q_delay = qsettings_defaults.get("delay_range")
         if q_cookie:
             defaults["cookie"] = _resolve_legacy_setting_path(
-                str(q_cookie), runtime_root=runtime_root, legacy_root=legacy_root
+                str(q_cookie),
+                runtime_root=runtime_root,
+                legacy_root=legacy_root
             )
         if q_db:
             defaults["db"] = _resolve_legacy_setting_path(
@@ -238,7 +266,9 @@ def migrate_legacy_config_once(
             )
         if q_output:
             defaults["output_dir"] = _resolve_legacy_setting_path(
-                str(q_output), runtime_root=runtime_root, legacy_root=legacy_root
+                str(q_output),
+                runtime_root=runtime_root,
+                legacy_root=legacy_root
             )
         if q_delay:
             defaults["delay_range"] = str(q_delay)

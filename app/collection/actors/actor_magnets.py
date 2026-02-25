@@ -64,25 +64,21 @@ def parse_magnets(html: str) -> List[Dict[str, Any]]:
                 tag_values.append(text)
         size_node = anchor.select_one("span.meta")
         size_value = size_node.get_text(strip=True) if size_node else ""
-        magnets.append(
-            {
-                "href": href,
-                "tags": tag_values,
-                "size": size_value,
-            }
-        )
+        magnets.append({
+            "href": href,
+            "tags": tag_values,
+            "size": size_value,
+        })
 
     if not magnets:
         for a in root.select("a[href^='magnet:']"):
             href = a.get("href", "").strip()
             if href:
-                magnets.append(
-                    {
-                        "href": href,
-                        "tags": [],
-                        "size": "",
-                    }
-                )
+                magnets.append({
+                    "href": href,
+                    "tags": [],
+                    "size": "",
+                })
 
     seen = set()
     deduped: List[Dict[str, Any]] = []
@@ -208,23 +204,7 @@ def run_magnet_jobs(
     遍历数据库中的作品，抓取磁链并存入 SQLite 数据库文件。
     """
     resolved_fetch_config = normalize_fetch_config(fetch_config)
-    cookies: dict[str, Any] = {}
-    if resolved_fetch_config.mode == "httpx":
-        cookies = load_cookie_dict(cookie_json)
-        if not cookies:
-            LOGGER.error("未能从 cookie.json 解析到有效 Cookie。")
-            return {}
-    else:
-        try:
-            cookies = load_cookie_dict(cookie_json)
-        except SystemExit as exc:
-            LOGGER.warning("浏览器模式未加载 Cookie，将优先使用持久化会话：%s", exc)
-            cookies = {}
-
-    if resolved_fetch_config.mode == "httpx" or cookies:
-        for must in ("over18", "cf_clearance", "_jdb_session"):
-            if must not in cookies:
-                LOGGER.warning("Cookie 缺少 %s，可能会遇到拦截。", must)
+    cookies = load_cookie_dict(cookie_json)
 
     if out_root != "userdata/magnets":
         LOGGER.debug("out_root 参数仅用于 TXT 导出，与数据库写入无关：%s", out_root)
@@ -284,7 +264,9 @@ def run_magnet_jobs(
 
         summary = {}
         with create_fetcher(cookies, resolved_fetch_config) as fetcher:
-            actor_items = sorted(all_works.items(), key=lambda kv: kv[0].lower())
+            actor_items = sorted(
+                all_works.items(), key=lambda kv: kv[0].lower()
+            )
             resume_mode = bool(resume_actor)
             for actor_name, works in actor_items:
                 ensure_not_cancelled()
@@ -295,10 +277,14 @@ def run_magnet_jobs(
                 LOGGER.info("开始抓取演员：%s", actor_name)
                 magnet_counts = []
                 start_index = resume_index if actor_name == resume_actor else 0
-                for i, work in enumerate(works[start_index:], start=start_index):
+                for i, work in enumerate(
+                    works[start_index:], start=start_index
+                ):
                     ensure_not_cancelled()
                     code, href = work["code"], work["href"]
-                    LOGGER.info("[%d/%d] %s -> %s", i + 1, len(works), code, href)
+                    LOGGER.info(
+                        "[%d/%d] %s -> %s", i + 1, len(works), code, href
+                    )
                     try:
                         magnets = crawl_magnets_for_row(
                             fetcher,
@@ -329,7 +315,10 @@ def run_magnet_jobs(
                     except Exception as e:
                         LOGGER.exception("%s 抓取失败：%s", code, e)
                     save_checkpoint(
-                        "magnets", {"actor": actor_name, "index": i + 1}
+                        "magnets", {
+                            "actor": actor_name,
+                            "index": i + 1
+                        }
                     )
                 summary[actor_name] = {
                     "works": len(works),

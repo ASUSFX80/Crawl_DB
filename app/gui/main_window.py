@@ -60,6 +60,7 @@ class LogEmitter(QtCore.QObject):
 
 
 class QtLogHandler(logging.Handler):
+
     def __init__(self, emitter: LogEmitter) -> None:
         super().__init__()
         self.emitter = emitter
@@ -134,8 +135,8 @@ class FlowWorker(QtCore.QObject):
         self.started.emit()
         start = perf_counter()
         set_cancel_checker(
-            lambda: self._cancel_requested
-            or bool(QtCore.QThread.currentThread().isInterruptionRequested())
+            lambda: self._cancel_requested or
+            bool(QtCore.QThread.currentThread().isInterruptionRequested())
         )
         try:
             LOGGER.info(
@@ -220,6 +221,7 @@ class FlowWorker(QtCore.QObject):
 
 
 class MainWindow(QtWidgets.QMainWindow):
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("crawljav GUI")
@@ -235,9 +237,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._current_actor_rows: list[gdv.WorkViewRow] = []
         self._runtime_root_path = _RUNTIME_ROOT
         self._runtime_fallback_used = _RUNTIME_FALLBACK_USED
-        self._active_config_file = (self._runtime_root() / "config.ini").resolve(
-            strict=False
-        )
+        self._active_config_file = (self._runtime_root() /
+                                    "config.ini").resolve(strict=False)
 
         self._log_emitter = LogEmitter()
         self._log_handler = QtLogHandler(self._log_emitter)
@@ -301,7 +302,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.collect_scope_combo.addItem("片商/卖家", "actor")
         self.collect_scope_combo.addItem("导演", "actor")
         self.collect_scope_combo.addItem("番号", "actor")
-        self.filter_mode_combo.currentIndexChanged.connect(self._on_filter_mode_changed)
+        self.filter_mode_combo.currentIndexChanged.connect(
+            self._on_filter_mode_changed
+        )
         self._on_filter_mode_changed()
 
         config_layout.addWidget(QtWidgets.QLabel("标签"), 0, 0)
@@ -325,7 +328,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.works_cb = QtWidgets.QCheckBox("作品列表")
         self.magnets_cb = QtWidgets.QCheckBox("磁链抓取")
         self.filter_cb = QtWidgets.QCheckBox("磁链筛选")
-        for cb in (self.collect_cb, self.works_cb, self.magnets_cb, self.filter_cb):
+        for cb in (
+            self.collect_cb, self.works_cb, self.magnets_cb, self.filter_cb
+        ):
             cb.stateChanged.connect(self._save_flow_settings)
 
         flow_layout.addWidget(self.collect_cb)
@@ -358,7 +363,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.log_view = QtWidgets.QPlainTextEdit()
         self.log_view.setReadOnly(True)
-        mono_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+        mono_font = QtGui.QFontDatabase.systemFont(
+            QtGui.QFontDatabase.FixedFont
+        )
         self.log_view.setFont(mono_font)
         self.log_view.setMaximumBlockCount(800)
         status_layout.addWidget(self.log_view)
@@ -455,7 +462,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search_mode_combo.currentIndexChanged.connect(
             lambda _: self._refresh_data_view()
         )
-        self.search_input.textChanged.connect(lambda _: self._refresh_data_view())
+        self.search_input.textChanged.connect(
+            lambda _: self._refresh_data_view()
+        )
         self.actor_sort_combo.currentIndexChanged.connect(
             lambda _: self._refresh_data_view()
         )
@@ -508,7 +517,15 @@ class MainWindow(QtWidgets.QMainWindow):
         actor_layout.setSpacing(8)
         self.actor_list = QtWidgets.QListWidget()
         self.actor_list.itemSelectionChanged.connect(self._on_actor_selected)
+        self.actor_list.installEventFilter(self)
         actor_layout.addWidget(self.actor_list, stretch=1)
+        self.actor_copy_shortcut = QtWidgets.QShortcut(
+            QtGui.QKeySequence.Copy, self.actor_list
+        )
+        self.actor_copy_shortcut.setContext(QtCore.Qt.WidgetShortcut)
+        self.actor_copy_shortcut.activated.connect(
+            self._copy_selected_actor_name
+        )
 
         works_box = QtWidgets.QGroupBox("作品")
         works_layout = QtWidgets.QVBoxLayout(works_box)
@@ -517,9 +534,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.works_table = QtWidgets.QTableWidget(0, 3)
         self.works_table.setHorizontalHeaderLabels(["番号", "标题", "链接"])
         self.works_table.horizontalHeader().setStretchLastSection(True)
-        self.works_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.works_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
-        self.works_table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.works_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.NoEditTriggers
+        )
+        self.works_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectItems
+        )
+        self.works_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.ExtendedSelection
+        )
         self.works_table.setContextMenuPolicy(QtCore.Qt.NoContextMenu)
         self.works_table.setMouseTracking(True)
         self.works_table.setStyleSheet(
@@ -539,10 +562,12 @@ class MainWindow(QtWidgets.QMainWindow):
             """
         )
         self.works_table.itemSelectionChanged.connect(self._on_work_selected)
+        self.works_table.installEventFilter(self)
         works_layout.addWidget(self.works_table)
         self.works_copy_shortcut = QtWidgets.QShortcut(
             QtGui.QKeySequence.Copy, self.works_table
         )
+        self.works_copy_shortcut.setContext(QtCore.Qt.WidgetShortcut)
         self.works_copy_shortcut.activated.connect(
             lambda: self._copy_selected_table_cells(self.works_table)
         )
@@ -554,8 +579,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.magnets_table = QtWidgets.QTableWidget(0, 3)
         self.magnets_table.setHorizontalHeaderLabels(["Magnet", "标签", "大小"])
         self.magnets_table.horizontalHeader().setStretchLastSection(True)
-        self.magnets_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.magnets_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
+        self.magnets_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.NoEditTriggers
+        )
+        self.magnets_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectItems
+        )
         self.magnets_table.setSelectionMode(
             QtWidgets.QAbstractItemView.ExtendedSelection
         )
@@ -576,10 +605,12 @@ class MainWindow(QtWidgets.QMainWindow):
             }
             """
         )
+        self.magnets_table.installEventFilter(self)
         magnets_layout.addWidget(self.magnets_table)
         self.magnets_copy_shortcut = QtWidgets.QShortcut(
             QtGui.QKeySequence.Copy, self.magnets_table
         )
+        self.magnets_copy_shortcut.setContext(QtCore.Qt.WidgetShortcut)
         self.magnets_copy_shortcut.activated.connect(
             lambda: self._copy_selected_table_cells(self.magnets_table)
         )
@@ -607,7 +638,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings_form.setFieldGrowthPolicy(
             QtWidgets.QFormLayout.AllNonFixedFieldsGrow
         )
-        self.settings_form.setFormAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        self.settings_form.setFormAlignment(
+            QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop
+        )
         self.settings_form.setLabelAlignment(
             QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
         )
@@ -620,7 +653,9 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.base_domain_segment_input.setPlaceholderText("例如 javdb")
         self.default_fetch_mode_combo = QtWidgets.QComboBox()
-        self.default_fetch_mode_combo.addItem("browser（默认，Playwright）", "browser")
+        self.default_fetch_mode_combo.addItem(
+            "browser（默认，Playwright）", "browser"
+        )
         self.default_fetch_mode_combo.addItem("httpx", "httpx")
         self.default_browser_profile = QtWidgets.QLineEdit(
             str(DEFAULT_BROWSER_USER_DATA_DIR)
@@ -628,11 +663,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.default_browser_headless_cb = QtWidgets.QCheckBox("无头模式")
         self.default_browser_timeout_spin = QtWidgets.QSpinBox()
         self.default_browser_timeout_spin.setRange(5, 600)
-        self.default_browser_timeout_spin.setValue(DEFAULT_BROWSER_TIMEOUT_SECONDS)
+        self.default_browser_timeout_spin.setValue(
+            DEFAULT_BROWSER_TIMEOUT_SECONDS
+        )
         self.default_browser_timeout_spin.setFixedWidth(130)
         self.default_challenge_timeout_spin = QtWidgets.QSpinBox()
         self.default_challenge_timeout_spin.setRange(30, 3600)
-        self.default_challenge_timeout_spin.setValue(DEFAULT_CHALLENGE_TIMEOUT_SECONDS)
+        self.default_challenge_timeout_spin.setValue(
+            DEFAULT_CHALLENGE_TIMEOUT_SECONDS
+        )
         self.default_challenge_timeout_spin.setFixedWidth(130)
         self.default_cookie_btn = QtWidgets.QPushButton("浏览")
         self.default_db_btn = QtWidgets.QPushButton("浏览")
@@ -658,7 +697,9 @@ class MainWindow(QtWidgets.QMainWindow):
             )
         default_browser_profile_btn = QtWidgets.QPushButton("浏览")
         default_browser_profile_btn.setObjectName("ghostButton")
-        default_browser_profile_btn.clicked.connect(self._pick_default_browser_profile)
+        default_browser_profile_btn.clicked.connect(
+            self._pick_default_browser_profile
+        )
         cookie_row = QtWidgets.QHBoxLayout()
         cookie_row.addWidget(self.default_cookie)
         cookie_row.addWidget(self.default_cookie_btn)
@@ -703,7 +744,9 @@ class MainWindow(QtWidgets.QMainWindow):
         browser_timeout_row.addWidget(self.default_challenge_timeout_spin)
         browser_timeout_row.addStretch(1)
         self.settings_form.addRow("浏览器超时 (s)", browser_timeout_row)
-        self.settings_form.addRow("Browser 选项", self.default_browser_headless_cb)
+        self.settings_form.addRow(
+            "Browser 选项", self.default_browser_headless_cb
+        )
         self.settings_form.addRow("配置文件", config_file_row)
 
         self.history_box = QtWidgets.QGroupBox("历史记录")
@@ -784,7 +827,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _open_db_file(self) -> None:
         path = resolve_stored_path(
-            self.default_db.text().strip() or str(DEFAULT_DB), self._runtime_root()
+            self.default_db.text().strip() or str(DEFAULT_DB),
+            self._runtime_root()
         )
         if path.exists():
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(path)))
@@ -920,7 +964,9 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         return sorted(files, key=lambda item: item.name.lower())
 
-    def _refresh_config_file_options(self, selected: Path | None = None) -> None:
+    def _refresh_config_file_options(
+        self, selected: Path | None = None
+    ) -> None:
         if not hasattr(self, "config_file_combo"):
             return
         target = (selected or self._config_file_path()).resolve(strict=False)
@@ -963,9 +1009,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "配置错误", "配置文件名不能为空。")
             return
         if "/" in filename or "\\" in filename:
-            QtWidgets.QMessageBox.warning(
-                self, "配置错误", "配置文件名不能包含路径分隔符。"
-            )
+            QtWidgets.QMessageBox.warning(self, "配置错误", "配置文件名不能包含路径分隔符。")
             return
         if not filename.lower().endswith(".ini"):
             filename = f"{filename}.ini"
@@ -990,20 +1034,31 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _load_flow_settings(self) -> None:
         settings = self._flow_settings()
-        self.collect_cb.setChecked(settings.value("flow/collect", True, type=bool))
+        self.collect_cb.setChecked(
+            settings.value("flow/collect", True, type=bool)
+        )
         self.works_cb.setChecked(settings.value("flow/works", True, type=bool))
-        self.magnets_cb.setChecked(settings.value("flow/magnets", True, type=bool))
-        self.filter_cb.setChecked(settings.value("flow/filter", True, type=bool))
+        self.magnets_cb.setChecked(
+            settings.value("flow/magnets", True, type=bool)
+        )
+        self.filter_cb.setChecked(
+            settings.value("flow/filter", True, type=bool)
+        )
 
     def _legacy_qsettings_defaults(self) -> dict[str, str]:
         settings = self._flow_settings()
         return {
-            "cookie": str(settings.value("defaults/cookie", "", type=str) or ""),
-            "db": str(settings.value("defaults/db", "", type=str) or ""),
-            "output_dir": str(settings.value("defaults/output", "", type=str) or ""),
-            "delay_range": str(
-                settings.value("defaults/delay", "0.8-1.6", type=str) or "0.8-1.6"
-            ),
+            "cookie":
+                str(settings.value("defaults/cookie", "", type=str) or ""),
+            "db":
+                str(settings.value("defaults/db", "", type=str) or ""),
+            "output_dir":
+                str(settings.value("defaults/output", "", type=str) or ""),
+            "delay_range":
+                str(
+                    settings.value("defaults/delay", "0.8-1.6", type=str)
+                    or "0.8-1.6"
+                ),
         }
 
     def _migrate_legacy_config_once(self) -> None:
@@ -1018,8 +1073,11 @@ class MainWindow(QtWidgets.QMainWindow):
             LOGGER.warning("迁移旧配置失败，将使用默认配置：%s", exc)
             self._save_ini_config()
 
-    def _load_ini_config(self, *, config_file: Path | None = None) -> dict[str, object]:
-        config_file = (config_file or self._config_file_path()).resolve(strict=False)
+    def _load_ini_config(self,
+                         *,
+                         config_file: Path | None = None) -> dict[str, object]:
+        config_file = (config_file
+                       or self._config_file_path()).resolve(strict=False)
         if not config_file.exists():
             self._save_ini_config(config_file=config_file)
         return load_ini_config(config_file, self._runtime_root())
@@ -1030,7 +1088,8 @@ class MainWindow(QtWidgets.QMainWindow):
         config_file: Path | None = None,
         migrated_from_legacy: bool = False,
     ) -> None:
-        target_file = (config_file or self._config_file_path()).resolve(strict=False)
+        target_file = (config_file
+                       or self._config_file_path()).resolve(strict=False)
         self._active_config_file = target_file
         self._store_active_config_file()
         cookie_path = resolve_stored_path(
@@ -1047,8 +1106,8 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         fetch_mode = (
             self.default_fetch_mode_combo.currentData()
-            if self.default_fetch_mode_combo.currentData() in ("httpx", "browser")
-            else DEFAULT_FETCH_MODE
+            if self.default_fetch_mode_combo.currentData()
+            in ("httpx", "browser") else DEFAULT_FETCH_MODE
         )
         collect_scope = "actor"
         browser_user_data_dir = resolve_stored_path(
@@ -1071,7 +1130,8 @@ class MainWindow(QtWidgets.QMainWindow):
             browser_user_data_dir=browser_user_data_dir,
             browser_headless=self.default_browser_headless_cb.isChecked(),
             browser_timeout_seconds=self.default_browser_timeout_spin.value(),
-            challenge_timeout_seconds=self.default_challenge_timeout_spin.value(),
+            challenge_timeout_seconds=self.default_challenge_timeout_spin.value(
+            ),
             migrated_from_legacy=migrated_from_legacy,
         )
         self._refresh_config_file_options(target_file)
@@ -1088,14 +1148,22 @@ class MainWindow(QtWidgets.QMainWindow):
         fetch_mode = str(loaded.get("fetch_mode", DEFAULT_FETCH_MODE))
         collect_scope = str(loaded.get("collect_scope", DEFAULT_COLLECT_SCOPE))
         browser_profile = Path(
-            str(loaded.get("browser_user_data_dir", DEFAULT_BROWSER_USER_DATA_DIR))
+            str(
+                loaded.get(
+                    "browser_user_data_dir", DEFAULT_BROWSER_USER_DATA_DIR
+                )
+            )
         )
         browser_headless = bool(loaded.get("browser_headless", False))
         browser_timeout = int(
-            loaded.get("browser_timeout_seconds", DEFAULT_BROWSER_TIMEOUT_SECONDS)
+            loaded.get(
+                "browser_timeout_seconds", DEFAULT_BROWSER_TIMEOUT_SECONDS
+            )
         )
         challenge_timeout = int(
-            loaded.get("challenge_timeout_seconds", DEFAULT_CHALLENGE_TIMEOUT_SECONDS)
+            loaded.get(
+                "challenge_timeout_seconds", DEFAULT_CHALLENGE_TIMEOUT_SECONDS
+            )
         )
         self.default_cookie.setText(str(cookie_path))
         self.default_db.setText(str(db_path))
@@ -1132,7 +1200,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _ensure_default_db(self) -> None:
         db_path = resolve_stored_path(
-            self.default_db.text().strip() or str(DEFAULT_DB), self._runtime_root()
+            self.default_db.text().strip() or str(DEFAULT_DB),
+            self._runtime_root()
         )
         self.default_db.setText(str(db_path))
         if db_path.exists():
@@ -1143,9 +1212,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 pass
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("初始化数据库失败: %s", exc)
-            QtWidgets.QMessageBox.warning(
-                self, "数据库错误", f"初始化数据库失败：{exc}"
-            )
+            QtWidgets.QMessageBox.warning(self, "数据库错误", f"初始化数据库失败：{exc}")
 
     def _show_runtime_fallback_notice(self) -> None:
         QtWidgets.QMessageBox.information(
@@ -1209,7 +1276,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._runtime_root(),
         )
         db_path_obj = resolve_stored_path(
-            self.default_db.text().strip() or str(DEFAULT_DB), self._runtime_root()
+            self.default_db.text().strip() or str(DEFAULT_DB),
+            self._runtime_root()
         )
         output_dir_obj = resolve_stored_path(
             self.default_output.text().strip() or str(DEFAULT_OUTPUT),
@@ -1219,8 +1287,8 @@ class MainWindow(QtWidgets.QMainWindow):
         cookie_path = str(cookie_path_obj)
         fetch_mode = (
             self.default_fetch_mode_combo.currentData()
-            if self.default_fetch_mode_combo.currentData() in ("httpx", "browser")
-            else DEFAULT_FETCH_MODE
+            if self.default_fetch_mode_combo.currentData()
+            in ("httpx", "browser") else DEFAULT_FETCH_MODE
         )
         base_domain_segment = self.base_domain_segment_input.text().strip()
         if not is_valid_base_domain_segment(base_domain_segment):
@@ -1236,42 +1304,27 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "配置错误", f"站点域名无效：{exc}")
             return
         collect_scope = "actor"
-        if fetch_mode == "httpx":
-            if not cookie_path:
-                QtWidgets.QMessageBox.warning(
-                    self, "缺少参数", "需要填写 Cookie 路径。"
-                )
-                return
-            try:
-                cookies = load_cookie_dict(cookie_path)
-            except SystemExit as exc:
-                QtWidgets.QMessageBox.warning(self, "Cookie 错误", str(exc))
-                return
-            if not is_cookie_valid(cookies):
-                QtWidgets.QMessageBox.warning(
-                    self, "Cookie 错误", "Cookie 看起来无效。"
-                )
-                return
-        else:
-            if cookie_path:
-                try:
-                    cookies = load_cookie_dict(cookie_path)
-                    if not is_cookie_valid(cookies):
-                        LOGGER.warning(
-                            "浏览器模式下 Cookie 校验未通过，将继续使用持久化会话。"
-                        )
-                except SystemExit as exc:
-                    LOGGER.warning(
-                        "浏览器模式下未加载 Cookie，将继续使用持久化会话：%s", exc
-                    )
+        if not cookie_path:
+            QtWidgets.QMessageBox.warning(self, "缺少参数", "需要填写 Cookie 路径。")
+            return
+        try:
+            cookies = load_cookie_dict(cookie_path)
+        except SystemExit as exc:
+            QtWidgets.QMessageBox.warning(self, "Cookie 错误", str(exc))
+            return
+        if not is_cookie_valid(cookies):
+            QtWidgets.QMessageBox.warning(
+                self, "Cookie 错误", "Cookie 看起来无效。"
+            )
+            return
 
         filter_mode = self._current_filter_mode()
-        filter_values = self._parse_filter_values(self.filter_values_input.text())
+        filter_values = self._parse_filter_values(
+            self.filter_values_input.text()
+        )
         if filter_mode in ("code", "series"):
             if not filter_values:
-                QtWidgets.QMessageBox.warning(
-                    self, "缺少筛选值", "请至少输入一个筛选值。"
-                )
+                QtWidgets.QMessageBox.warning(self, "缺少筛选值", "请至少输入一个筛选值。")
                 return
 
         self.log_view.clear()
@@ -1298,7 +1351,8 @@ class MainWindow(QtWidgets.QMainWindow):
             ),
             browser_headless=self.default_browser_headless_cb.isChecked(),
             browser_timeout_seconds=self.default_browser_timeout_spin.value(),
-            challenge_timeout_seconds=self.default_challenge_timeout_spin.value(),
+            challenge_timeout_seconds=self.default_challenge_timeout_spin.value(
+            ),
             run_collect=self.collect_cb.isChecked(),
             run_works=self.works_cb.isChecked(),
             run_magnets=self.magnets_cb.isChecked(),
@@ -1448,7 +1502,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _load_data(self, *, reset_actor: bool = True) -> None:
         path = resolve_stored_path(
-            self.default_db.text().strip() or str(DEFAULT_DB), self._runtime_root()
+            self.default_db.text().strip() or str(DEFAULT_DB),
+            self._runtime_root()
         )
         self.default_db.setText(str(path))
         self._actors_cache = []
@@ -1496,7 +1551,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _has_subtitle_code(self, code: str) -> bool:
         return "-C" in code.upper()
 
-    def _apply_data_filters(self, rows: list[gdv.WorkViewRow]) -> list[gdv.WorkViewRow]:
+    def _apply_data_filters(
+        self, rows: list[gdv.WorkViewRow]
+    ) -> list[gdv.WorkViewRow]:
         searched = gdv.search_rows(
             rows,
             mode=self._current_search_mode(),
@@ -1515,7 +1572,9 @@ class MainWindow(QtWidgets.QMainWindow):
         actor_desc = (
             self.actor_sort_combo.currentData() or "actor_asc"
         ) == "actor_desc"
-        actor_names = gdv.sort_actor_names(self._active_view_rows, desc=actor_desc)
+        actor_names = gdv.sort_actor_names(
+            self._active_view_rows, desc=actor_desc
+        )
         empty_text = "暂无演员数据。" if not self._all_view_rows else "无匹配结果。"
         self._populate_actor_list(actor_names, empty_text=empty_text)
 
@@ -1575,10 +1634,11 @@ class MainWindow(QtWidgets.QMainWindow):
         desc = str(works_sort).endswith("_desc")
         sorted_rows = gdv.sort_actor_works(works_rows, key=work_key, desc=desc)
         self._current_actor_rows = sorted_rows
-        works = [
-            {"code": row["code"], "title": row["title"], "href": row["href"]}
-            for row in sorted_rows
-        ]
+        works = [{
+            "code": row["code"],
+            "title": row["title"],
+            "href": row["href"]
+        } for row in sorted_rows]
         self._populate_works_table(works)
         self.magnets_table.setRowCount(0)
 
@@ -1597,28 +1657,36 @@ class MainWindow(QtWidgets.QMainWindow):
             href_item = QtWidgets.QTableWidgetItem(href)
             if editable:
                 code_item.setFlags(code_item.flags() | QtCore.Qt.ItemIsEditable)
-                title_item.setFlags(title_item.flags() | QtCore.Qt.ItemIsEditable)
+                title_item.setFlags(
+                    title_item.flags() | QtCore.Qt.ItemIsEditable
+                )
             else:
-                code_item.setFlags(code_item.flags() & ~QtCore.Qt.ItemIsEditable)
-                title_item.setFlags(title_item.flags() & ~QtCore.Qt.ItemIsEditable)
+                code_item.setFlags(
+                    code_item.flags() & ~QtCore.Qt.ItemIsEditable
+                )
+                title_item.setFlags(
+                    title_item.flags() & ~QtCore.Qt.ItemIsEditable
+                )
             href_item.setFlags(href_item.flags() & ~QtCore.Qt.ItemIsEditable)
             self.works_table.setItem(row, 0, code_item)
             self.works_table.setItem(row, 1, title_item)
             self.works_table.setItem(row, 2, href_item)
         if editable:
             self.works_table.setEditTriggers(
-                QtWidgets.QAbstractItemView.DoubleClicked
-                | QtWidgets.QAbstractItemView.EditKeyPressed
-                | QtWidgets.QAbstractItemView.SelectedClicked
+                QtWidgets.QAbstractItemView.DoubleClicked |
+                QtWidgets.QAbstractItemView.EditKeyPressed |
+                QtWidgets.QAbstractItemView.SelectedClicked
             )
         else:
-            self.works_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            self.works_table.setEditTriggers(
+                QtWidgets.QAbstractItemView.NoEditTriggers
+            )
         self.works_table.resizeColumnsToContents()
 
     def _selected_work_rows(self) -> list[gdv.WorkViewRow]:
-        selected_indexes = sorted(
-            {index.row() for index in self.works_table.selectedIndexes()}
-        )
+        selected_indexes = sorted({
+            index.row() for index in self.works_table.selectedIndexes()
+        })
         rows: list[gdv.WorkViewRow] = []
         for row_index in selected_indexes:
             if 0 <= row_index < len(self._current_actor_rows):
@@ -1668,7 +1736,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _copy_selected_works(self, kind: gdv.CopyKind) -> None:
         actor_name = self._current_actor_name()
         actor_magnets = self._magnets_cache.get(actor_name, {})
-        text = gdv.build_copy_text(kind, self._selected_work_rows(), actor_magnets)
+        text = gdv.build_copy_text(
+            kind, self._selected_work_rows(), actor_magnets
+        )
         if not text:
             QtWidgets.QMessageBox.information(self, "提示", "没有可复制内容。")
             return
@@ -1687,7 +1757,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         rows: dict[int, dict[int, str]] = {}
         for index in indexes:
-            rows.setdefault(index.row(), {})[index.column()] = str(index.data() or "")
+            rows.setdefault(index.row(),
+                            {})[index.column()] = str(index.data() or "")
 
         lines: list[str] = []
         for row in sorted(rows):
@@ -1695,6 +1766,33 @@ class MainWindow(QtWidgets.QMainWindow):
             line = "\t".join(cols[col] for col in sorted(cols))
             lines.append(line)
         QtWidgets.QApplication.clipboard().setText("\n".join(lines))
+
+    def _copy_selected_actor_name(self) -> None:
+        items = self.actor_list.selectedItems()
+        if not items:
+            return
+        actor_name = items[0].text()
+        if actor_name in ("暂无演员数据。", "无匹配结果。"):
+            return
+        QtWidgets.QApplication.clipboard().setText(actor_name)
+
+    def eventFilter(
+        self, obj: QtCore.QObject, event: QtCore.QEvent
+    ) -> bool:
+        if event.type() == QtCore.QEvent.KeyPress and isinstance(
+            event, QtGui.QKeyEvent
+        ):
+            if event.matches(QtGui.QKeySequence.Copy):
+                if obj is self.actor_list:
+                    self._copy_selected_actor_name()
+                    return True
+                if obj is self.works_table:
+                    self._copy_selected_table_cells(self.works_table)
+                    return True
+                if obj is self.magnets_table:
+                    self._copy_selected_table_cells(self.magnets_table)
+                    return True
+        return super().eventFilter(obj, event)
 
     def _on_works_edit_toggled(self, checked: bool) -> None:
         self.save_works_btn.setEnabled(checked)
@@ -1793,13 +1891,11 @@ class MainWindow(QtWidgets.QMainWindow):
             code = selected_rows[0]["code"].strip() or "magnets"
             magnets = actor_magnets.get(code, [])
             lines = list(
-                dict.fromkeys(
-                    [
-                        str(item.get("magnet", "")).strip()
-                        for item in magnets
-                        if str(item.get("magnet", "")).strip()
-                    ]
-                )
+                dict.fromkeys([
+                    str(item.get("magnet", "")).strip()
+                    for item in magnets
+                    if str(item.get("magnet", "")).strip()
+                ])
             )
             default_name = f"{code}.txt"
         else:

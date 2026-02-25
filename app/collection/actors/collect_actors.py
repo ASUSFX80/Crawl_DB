@@ -51,9 +51,7 @@ def _is_interstitial_page(soup: BeautifulSoup) -> bool:
 def _log_interstitial_hint(soup: BeautifulSoup) -> None:
     """对疑似拦截页输出提示日志。"""
     if _is_interstitial_page(soup):
-        LOGGER.warning(
-            "解析提示：页面里没有 <section>，很可能是 Cloudflare/登录拦截页或 Cookie 失效。"
-        )
+        LOGGER.warning("解析提示：页面里没有 <section>，很可能是 Cloudflare/登录拦截页或 Cookie 失效。")
 
 
 def _extract_actor_boxes(soup: BeautifulSoup) -> list[Tag]:
@@ -69,7 +67,8 @@ def _parse_actor_box(box: Tag) -> Optional[dict[str, str]]:
     href_raw = anchor.get("href") or ""
     href = urljoin(_base_url(), href_raw) if href_raw else ""
     strong = box.select_one("strong")
-    name = strong.get_text(strip=True) if strong else anchor.get_text(strip=True)
+    name = strong.get_text(strip=True
+                          ) if strong else anchor.get_text(strip=True)
     if not href or not name:
         return None
     return {"href": href, "strong": name}
@@ -134,24 +133,7 @@ def crawl_all_pages(
 ):
     del collect_scope
     resolved_fetch_config = normalize_fetch_config(fetch_config)
-
-    cookies: dict[str, Any] = {}
-    if resolved_fetch_config.mode == "httpx":
-        cookies = load_cookie_dict(cookie_json)
-        if not cookies:
-            LOGGER.error("未能从 cookie.json 解析到有效 Cookie。")
-            return []
-    else:
-        try:
-            cookies = load_cookie_dict(cookie_json)
-        except SystemExit as exc:
-            LOGGER.warning("浏览器模式未加载 Cookie，将优先使用持久化会话：%s", exc)
-            cookies = {}
-
-    if resolved_fetch_config.mode == "httpx" or cookies:
-        for must in ("over18", "cf_clearance", "_jdb_session"):
-            if must not in cookies:
-                LOGGER.warning("Cookie 里没有 %s，可能会被拦截。", must)
+    cookies = load_cookie_dict(cookie_json)
 
     items: list[dict[str, str]] = []
     seen_hrefs: set[str] = set()

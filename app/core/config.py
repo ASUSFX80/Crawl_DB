@@ -32,7 +32,7 @@ def normalize_base_domain_segment(raw_value: str | None) -> str:
         value = value[2:]
     value = value.split("/", 1)[0]
     if value.endswith(".com"):
-        value = value[: -len(".com")]
+        value = value[:-len(".com")]
     return value.strip().strip(".")
 
 
@@ -69,18 +69,24 @@ def get_base_domain_segment() -> str:
     """从当前 BASE_URL 反推中间段。"""
     host = urlparse(BASE_URL).hostname or ""
     if host.endswith(".com"):
-        return host[: -len(".com")]
+        return host[:-len(".com")]
     return host
 
 
 def build_client(cookies: dict) -> httpx.Client:
     headers = {
-        "User-Agent": UA,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-        "Referer": BASE_URL + "/",
+        "User-Agent":
+            UA,
+        "Accept":
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language":
+            "zh-CN,zh;q=0.9,en;q=0.8",
+        "Cache-Control":
+            "no-cache",
+        "Pragma":
+            "no-cache",
+        "Referer":
+            BASE_URL + "/",
     }
     return httpx.Client(
         headers=headers, cookies=cookies, follow_redirects=True, timeout=30

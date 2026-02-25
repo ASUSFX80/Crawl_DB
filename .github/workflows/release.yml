@@ -54,23 +54,6 @@ jobs:
           python -m pip install -r "${{ matrix.requirements_file }}"
           python -m pip install PyInstaller Pillow
 
-      - name: Set Playwright Browser Path (macOS)
-        if: startsWith(matrix.os, 'macos')
-        shell: bash
-        run: |
-          echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright" >> "$GITHUB_ENV"
-
-      - name: Set Playwright Browser Path (Windows)
-        if: startsWith(matrix.os, 'windows')
-        shell: pwsh
-        run: |
-          $browserPath = Join-Path $env:RUNNER_TEMP "ms-playwright"
-          "PLAYWRIGHT_BROWSERS_PATH=$browserPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Install Playwright Chromium
-        run: |
-          python -m playwright install chromium
-
       - name: Prepare icon (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
@@ -151,9 +134,7 @@ jobs:
       - name: Build app (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
-          python -m PyInstaller --noconfirm --clean --windowed --icon build_assets/icon.icns --collect-all playwright --add-data "${{ env.SCHEMA_FILE }}${{ matrix.data_sep }}." --name "${{ env.APP_NAME }}" gui.py
-          mkdir -p "dist/${{ env.APP_NAME }}.app/Contents/Resources/ms-playwright"
-          cp -R "$PLAYWRIGHT_BROWSERS_PATH"/. "dist/${{ env.APP_NAME }}.app/Contents/Resources/ms-playwright/"
+          python -m PyInstaller --noconfirm --clean --windowed --icon build_assets/icon.icns --add-data "${{ env.SCHEMA_FILE }}${{ matrix.data_sep }}." --name "${{ env.APP_NAME }}" gui.py
           codesign --force --deep --sign - "dist/${{ env.APP_NAME }}.app"
           brew install create-dmg
           rm -f "dist/${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.target }}.dmg"
@@ -174,10 +155,8 @@ jobs:
         if: startsWith(matrix.os, 'windows')
         run: |
           $ErrorActionPreference = "Stop"
-          python -m PyInstaller --noconfirm --clean --windowed --onefile --icon build_assets/icon.ico --collect-all playwright --add-data "${{ env.SCHEMA_FILE }}${{ matrix.data_sep }}." --name "${{ env.APP_NAME }}" gui.py
-          if (Test-Path "dist\\ms-playwright") { Remove-Item -Recurse -Force "dist\\ms-playwright" }
-          Copy-Item -Recurse -Force "$env:PLAYWRIGHT_BROWSERS_PATH" "dist\\ms-playwright"
-          powershell -Command "Compress-Archive -Path dist\\${{ env.APP_NAME }}.exe,dist\\ms-playwright -DestinationPath dist\\${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.target }}.zip"
+          python -m PyInstaller --noconfirm --clean --windowed --onefile --icon build_assets/icon.ico --add-data "${{ env.SCHEMA_FILE }}${{ matrix.data_sep }}." --name "${{ env.APP_NAME }}" gui.py
+          powershell -Command "Compress-Archive -Path dist\\${{ env.APP_NAME }}.exe -DestinationPath dist\\${{ env.APP_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.target }}.zip"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

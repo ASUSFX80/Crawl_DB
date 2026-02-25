@@ -47,9 +47,8 @@ def parse_works(html: str):
     )
     if not movie_grid:
         # 兜底：类名顺序改变或有其它包裹层
-        movie_grid = soup.select_one(
-            "div.movie-list.h.cols-4.vcols-8"
-        ) or soup.select_one("div.movie-list")
+        movie_grid = soup.select_one("div.movie-list.h.cols-4.vcols-8"
+                                    ) or soup.select_one("div.movie-list")
     items = []
     if not movie_grid:
         LOGGER.warning("未找到作品列表容器 div.movie-list")
@@ -84,23 +83,7 @@ def crawl_actor_works(
     """
     known_codes = known_codes or set()
     resolved_fetch_config = normalize_fetch_config(fetch_config)
-    cookies: dict[str, Any] = {}
-    if resolved_fetch_config.mode == "httpx":
-        cookies = load_cookie_dict(cookie_json)
-        if not cookies:
-            LOGGER.error("未能从 cookie.json 解析到有效 Cookie。")
-            return []
-    else:
-        try:
-            cookies = load_cookie_dict(cookie_json)
-        except SystemExit as exc:
-            LOGGER.warning("浏览器模式未加载 Cookie，将优先使用持久化会话：%s", exc)
-            cookies = {}
-
-    if resolved_fetch_config.mode == "httpx" or cookies:
-        for must in ("over18", "cf_clearance", "_jdb_session"):
-            if must not in cookies:
-                LOGGER.warning("Cookie 缺少 %s，可能会遇到拦截。", must)
+    cookies = load_cookie_dict(cookie_json)
 
     rows, page, url = [], 1, start_url
     with create_fetcher(cookies, resolved_fetch_config) as fetcher:
@@ -161,13 +144,21 @@ def run_actor_works(
         actor_filters: list[str] = []
         if actor_name is not None:
             if isinstance(actor_name, str):
-                actor_filters = [n.strip() for n in actor_name.split(",") if n.strip()]
+                actor_filters = [
+                    n.strip() for n in actor_name.split(",") if n.strip()
+                ]
             else:
-                actor_filters = [str(n).strip() for n in actor_name if str(n).strip()]
+                actor_filters = [
+                    str(n).strip() for n in actor_name if str(n).strip()
+                ]
 
         if actor_filters:
-            filtered = [(name, href) for name, href in actors if name in actor_filters]
-            missing = [name for name in actor_filters if name not in dict(actors)]
+            filtered = [
+                (name, href) for name, href in actors if name in actor_filters
+            ]
+            missing = [
+                name for name in actor_filters if name not in dict(actors)
+            ]
             if not filtered:
                 LOGGER.warning("未找到指定演员：%s", ", ".join(actor_filters))
                 return {}
@@ -197,9 +188,12 @@ def run_actor_works(
                     ckpt.get("actor", ""),
                 )
 
-        for i, (actor_name, href) in enumerate(actors[start_index:], start=start_index):
+        for i, (actor_name,
+                href) in enumerate(actors[start_index:], start=start_index):
             ensure_not_cancelled()
-            existing_codes = {w["code"] for w in store.get_actor_works(actor_name)}
+            existing_codes = {
+                w["code"] for w in store.get_actor_works(actor_name)
+            }
             start_url = build_actor_url(_base_url(), href, tags_list)
             LOGGER.info("开始处理演员：%s", actor_name)
             if tags_list:
@@ -219,7 +213,12 @@ def run_actor_works(
                 len(works),
             )
             summary[actor_name] = {"count": len(works)}
-            save_checkpoint("actor_works", {"actor": actor_name, "index": i + 1})
+            save_checkpoint(
+                "actor_works", {
+                    "actor": actor_name,
+                    "index": i + 1
+                }
+            )
 
         clear_checkpoint("actor_works")
         record_history(

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Literal, Mapping, Sequence, TypedDict
 
-
 SearchMode = Literal["actor", "code", "title"]
 MagnetState = Literal["all", "with", "without"]
 CodeState = Literal["all", "coded", "uncensored"]
@@ -45,21 +44,20 @@ def build_rows(
             title = str(work.get("title", "")).strip()
             href = str(work.get("href", "")).strip()
             upper_code = code.upper()
-            rows.append(
-                {
-                    "actor": actor,
-                    "code": code,
-                    "title": title,
-                    "href": href,
-                    "has_magnets": bool(actor_magnets.get(code)),
-                    "is_uncensored": "-U" in upper_code,
-                    "has_subtitle": "-C" in upper_code,
-                }
-            )
+            rows.append({
+                "actor": actor,
+                "code": code,
+                "title": title,
+                "href": href,
+                "has_magnets": bool(actor_magnets.get(code)),
+                "is_uncensored": "-U" in upper_code,
+                "has_subtitle": "-C" in upper_code,
+            })
     return rows
 
 
-def search_rows(rows: list[WorkViewRow], mode: SearchMode, keyword: str) -> list[WorkViewRow]:
+def search_rows(rows: list[WorkViewRow], mode: SearchMode,
+                keyword: str) -> list[WorkViewRow]:
     text = keyword.strip().lower()
     if not text:
         return list(rows)
@@ -97,7 +95,10 @@ def sort_actor_names(rows: list[WorkViewRow], desc: bool = False) -> list[str]:
 
 
 def sort_actor_works(
-    rows: list[WorkViewRow], *, key: WorkSortKey, desc: bool = False
+    rows: list[WorkViewRow],
+    *,
+    key: WorkSortKey,
+    desc: bool = False
 ) -> list[WorkViewRow]:
     return sorted(
         rows,
@@ -121,9 +122,9 @@ def build_magnet_export_lines(
         if not code:
             continue
         magnets = actor_magnets.get(code, [])
-        magnet_values = _unique_preserve_order(
-            [str(item.get("magnet", "")).strip() for item in magnets]
-        )
+        magnet_values = _unique_preserve_order([
+            str(item.get("magnet", "")).strip() for item in magnets
+        ])
         if not magnet_values:
             continue
         if lines and index > 0:
@@ -145,11 +146,15 @@ def build_copy_text(
         return ""
     if kind == "code":
         return "\n".join(
-            _unique_preserve_order([str(row.get("code", "")) for row in selected_rows])
+            _unique_preserve_order([
+                str(row.get("code", "")) for row in selected_rows
+            ])
         )
     if kind == "title":
         return "\n".join(
-            _unique_preserve_order([str(row.get("title", "")) for row in selected_rows])
+            _unique_preserve_order([
+                str(row.get("title", "")) for row in selected_rows
+            ])
         )
     if kind == "magnet":
         values: list[str] = []

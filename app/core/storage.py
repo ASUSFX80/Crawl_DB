@@ -13,6 +13,7 @@ def normalize_collect_scope(scope: str | None) -> str:
     text = str(scope or "").strip().lower()
     return text if text in _VALID_COLLECT_SCOPES else "actor"
 
+
 def _resolve_schema_file() -> Path:
     candidates = [
         Path(__file__).with_name("schema.sql"),
@@ -31,13 +32,12 @@ def _resolve_schema_file() -> Path:
 SCHEMA_FILE = _resolve_schema_file()
 
 
-def _normalize_actor_record(record: Mapping[str, object]) -> Optional[Tuple[str, str]]:
+def _normalize_actor_record(
+    record: Mapping[str, object]
+) -> Optional[Tuple[str, str]]:
     raw_name = (
-        record.get("actor_name")
-        or record.get("name")
-        or record.get("strong")
-        or record.get("title")
-        or ""
+        record.get("actor_name") or record.get("name") or record.get("strong")
+        or record.get("title") or ""
     )
     raw_href = record.get("href") or record.get("url") or ""
     name = str(raw_name).strip()
@@ -75,7 +75,8 @@ def _normalize_magnet_record(
 def _normalize_collection_record(
     record: Mapping[str, object]
 ) -> Optional[Tuple[str, str]]:
-    raw_name = record.get("name") or record.get("strong") or record.get("title") or ""
+    raw_name = record.get("name") or record.get("strong"
+                                               ) or record.get("title") or ""
     raw_href = record.get("href") or record.get("url") or ""
     name = str(raw_name).strip()
     href = str(raw_href).strip()
@@ -218,7 +219,9 @@ class Storage(AbstractContextManager["Storage"]):
         )
         return [(row["name"], row["href"]) for row in cur]
 
-    def _ensure_collection(self, scope: str, name: str, href: str | None = None) -> int:
+    def _ensure_collection(
+        self, scope: str, name: str, href: str | None = None
+    ) -> int:
         normalized_scope = normalize_collect_scope(scope)
         row = self.conn.execute(
             "SELECT id FROM collections WHERE scope = ? AND name = ?",
@@ -281,10 +284,11 @@ class Storage(AbstractContextManager["Storage"]):
             """,
             (actor_name,),
         )
-        return [
-            {"code": row["code"], "title": row["title"], "href": row["href"]}
-            for row in cur
-        ]
+        return [{
+            "code": row["code"],
+            "title": row["title"],
+            "href": row["href"]
+        } for row in cur]
 
     def get_all_actor_works(self) -> Dict[str, List[Dict[str, str]]]:
         cur = self.conn.execute(
@@ -301,9 +305,11 @@ class Storage(AbstractContextManager["Storage"]):
         )
         grouped: Dict[str, List[Dict[str, str]]] = {}
         for row in cur:
-            grouped.setdefault(row["actor_name"], []).append(
-                {"code": row["code"], "title": row["title"], "href": row["href"]}
-            )
+            grouped.setdefault(row["actor_name"], []).append({
+                "code": row["code"],
+                "title": row["title"],
+                "href": row["href"]
+            })
         return grouped
 
     def update_work_fields(
@@ -351,7 +357,10 @@ class Storage(AbstractContextManager["Storage"]):
                 SET code = ?, title = ?
                 WHERE actor_id = ? AND code = ?
                 """,
-                (new_code_text, new_title_text or None, actor_id, old_code_text),
+                (
+                    new_code_text, new_title_text
+                    or None, actor_id, old_code_text
+                ),
             )
         return True
 
@@ -370,7 +379,9 @@ class Storage(AbstractContextManager["Storage"]):
         if not normalized:
             return 0
 
-        collection_id = self._ensure_collection(scope, collection_name, collection_href)
+        collection_id = self._ensure_collection(
+            scope, collection_name, collection_href
+        )
         with self.conn:
             for code, href, title in normalized:
                 self.conn.execute(
@@ -385,7 +396,8 @@ class Storage(AbstractContextManager["Storage"]):
                 )
         return len(normalized)
 
-    def get_all_collection_works(self, scope: str) -> Dict[str, List[Dict[str, str]]]:
+    def get_all_collection_works(self,
+                                 scope: str) -> Dict[str, List[Dict[str, str]]]:
         normalized_scope = normalize_collect_scope(scope)
         cur = self.conn.execute(
             """
@@ -402,12 +414,15 @@ class Storage(AbstractContextManager["Storage"]):
         )
         grouped: Dict[str, List[Dict[str, str]]] = {}
         for row in cur:
-            grouped.setdefault(row["collection_name"], []).append(
-                {"code": row["code"], "title": row["title"], "href": row["href"]}
-            )
+            grouped.setdefault(row["collection_name"], []).append({
+                "code": row["code"],
+                "title": row["title"],
+                "href": row["href"]
+            })
         return grouped
 
-    def get_collection_href(self, scope: str, collection_name: str) -> Optional[str]:
+    def get_collection_href(self, scope: str,
+                            collection_name: str) -> Optional[str]:
         normalized_scope = normalize_collect_scope(scope)
         row = self.conn.execute(
             "SELECT href FROM collections WHERE scope = ? AND name = ?",
@@ -452,7 +467,9 @@ class Storage(AbstractContextManager["Storage"]):
         title: str | None,
         href: str | None,
     ) -> int:
-        collection_id = self._ensure_collection(scope, collection_name, collection_href)
+        collection_id = self._ensure_collection(
+            scope, collection_name, collection_href
+        )
         row = self.conn.execute(
             """
             SELECT id FROM collection_works
@@ -492,17 +509,17 @@ class Storage(AbstractContextManager["Storage"]):
 
         work_id = self._ensure_work(actor_name, actor_href, code, title, href)
         with self.conn:
-            self.conn.execute("DELETE FROM magnets WHERE work_id = ?", (work_id,))
+            self.conn.execute(
+                "DELETE FROM magnets WHERE work_id = ?", (work_id,)
+            )
             if normalized:
                 self.conn.executemany(
                     """
                     INSERT INTO magnets (work_id, magnet, tags, size)
                     VALUES (?, ?, ?, ?)
                     """,
-                    [
-                        (work_id, magnet, tags or None, size or None)
-                        for magnet, tags, size in normalized
-                    ],
+                    [(work_id, magnet, tags or None, size or None)
+                     for magnet, tags, size in normalized],
                 )
         return len(normalized)
 
@@ -529,15 +546,13 @@ class Storage(AbstractContextManager["Storage"]):
         for row in cur:
             actor_bucket = grouped.setdefault(row["actor_name"], {})
             work_bucket = actor_bucket.setdefault(row["code"], [])
-            work_bucket.append(
-                {
-                    "magnet": row["magnet"],
-                    "tags": row["tags"],
-                    "size": row["size"],
-                    "title": row["title"],
-                    "href": row["href"],
-                }
-            )
+            work_bucket.append({
+                "magnet": row["magnet"],
+                "tags": row["tags"],
+                "size": row["size"],
+                "title": row["title"],
+                "href": row["href"],
+            })
         return grouped
 
     def get_actor_href(self, actor_name: str) -> Optional[str]:
@@ -582,9 +597,7 @@ class Storage(AbstractContextManager["Storage"]):
                     INSERT INTO collection_magnets (collection_work_id, magnet, tags, size)
                     VALUES (?, ?, ?, ?)
                     """,
-                    [
-                        (collection_work_id, magnet, tags or None, size or None)
-                        for magnet, tags, size in normalized
-                    ],
+                    [(collection_work_id, magnet, tags or None, size or None)
+                     for magnet, tags, size in normalized],
                 )
         return len(normalized)

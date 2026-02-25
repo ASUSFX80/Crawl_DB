@@ -9,6 +9,8 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 import httpx
 from bs4 import BeautifulSoup, FeatureNotFound
 
+PLAYWRIGHT_COOKIE_ITEMS_KEY = "__playwright_cookie_items__"
+
 
 class CancelledError(RuntimeError):
     pass
@@ -62,6 +64,7 @@ def _get_base_url() -> str:
 
     return BASE_URL
 
+
 def setup_daily_file_logger(
     log_dir: str = "logs",
     *,
@@ -99,13 +102,12 @@ def setup_daily_file_logger(
                 return log_path
 
     file_handler = logging.FileHandler(log_path, encoding="utf-8")
-    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    )
     file_handler.setFormatter(formatter)
     target_logger.addHandler(file_handler)
     return log_path
-
-
-
 
 
 # 解析cookie部分
@@ -133,8 +135,25 @@ def load_cookie_dict(cookie_json_path: str = "cookie.json") -> Dict[str, Any]:
     except Exception as exc:
         raise SystemExit(f"读取 Cookie 文件失败：{cookie_json_path}（{exc}）")
 
-    if isinstance(data, dict) and "cookie" in data and isinstance(data["cookie"], str):
+    if isinstance(data, dict
+                 ) and "cookie" in data and isinstance(data["cookie"], str):
         cookies = parse_cookie_string(data["cookie"])
+    elif (
+        isinstance(data, dict)
+        and "cookies" in data
+        and isinstance(data["cookies"], list)
+    ):
+        cookie_items = [
+            item for item in data["cookies"] if isinstance(item, dict)
+        ]
+        cookies = _cookie_items_to_name_value_dict(cookie_items)
+        cookies[PLAYWRIGHT_COOKIE_ITEMS_KEY] = cookie_items
+    elif isinstance(data, list):
+        cookie_items = [item for item in data if isinstance(item, dict)]
+        if len(cookie_items) != len(data):
+            raise SystemExit(f"Cookie 文件格式无效，期望 cookies 为对象数组：{cookie_json_path}")
+        cookies = _cookie_items_to_name_value_dict(cookie_items)
+        cookies[PLAYWRIGHT_COOKIE_ITEMS_KEY] = cookie_items
     elif isinstance(data, dict):
         cookies = data
     else:
@@ -143,6 +162,19 @@ def load_cookie_dict(cookie_json_path: str = "cookie.json") -> Dict[str, Any]:
     log_cookie_staleness(cookie_json_path)
     if not is_cookie_valid(cookies):
         raise SystemExit("Cookie 缺少关键字段或为空，退出。")
+    return cookies
+
+
+def _cookie_items_to_name_value_dict(
+    cookie_items: Sequence[Dict[str, Any]]
+) -> Dict[str, str]:
+    cookies: Dict[str, str] = {}
+    for item in cookie_items:
+        name = str(item.get("name", "")).strip()
+        value = item.get("value")
+        if not name or value is None:
+            continue
+        cookies[name] = str(value)
     return cookies
 
 
@@ -155,7 +187,10 @@ def log_cookie_staleness(cookie_json_path: str, warn_days: int = 3) -> None:
     if not path.exists():
         return
     try:
-        age_days = (datetime.datetime.now() - datetime.datetime.fromtimestamp(path.stat().st_mtime)).days
+        age_days = (
+            datetime.datetime.now() -
+            datetime.datetime.fromtimestamp(path.stat().st_mtime)
+        ).days
     except OSError:
         return
     if age_days >= warn_days:
@@ -211,6 +246,7 @@ def find_next_url(html: str):
 
 # --- 抓取过程记录工具 -------------------------------------------------
 
+
 def _read_json(path: Path, default: Dict[str, Any]) -> Dict[str, Any]:
     if not path.exists():
         return dict(default)
@@ -243,7 +279,9 @@ def record_history(
 
 
 def load_recent_history(
-    event: Optional[str] = None, limit: int = 5, history_path: str = "userdata/history.jsonl"
+    event: Optional[str] = None,
+    limit: int = 5,
+    history_path: str = "userdata/history.jsonl"
 ) -> list[Dict[str, Any]]:
     """
     读取最近的历史记录，可按 event 过滤。
@@ -259,7 +297,9 @@ def load_recent_history(
 
 
 def save_checkpoint(
-    name: str, cursor: Dict[str, Any], ckpt_path: str = "userdata/checkpoints.json"
+    name: str,
+    cursor: Dict[str, Any],
+    ckpt_path: str = "userdata/checkpoints.json"
 ) -> None:
     """
     保存分阶段的“断点”信息，例如：
@@ -273,11 +313,14 @@ def save_checkpoint(
         "cursor": cursor,
         "updated_at": datetime.datetime.utcnow().isoformat() + "Z",
     }
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def load_checkpoint(
-    name: str, ckpt_path: str = "userdata/checkpoints.json"
+    name: str,
+    ckpt_path: str = "userdata/checkpoints.json"
 ) -> Optional[Dict[str, Any]]:
     """
     读取指定阶段的断点信息；找不到则返回 None。
@@ -290,7 +333,9 @@ def load_checkpoint(
     return entry.get("cursor")
 
 
-def clear_checkpoint(name: str, ckpt_path: str = "userdata/checkpoints.json") -> None:
+def clear_checkpoint(
+    name: str, ckpt_path: str = "userdata/checkpoints.json"
+) -> None:
     """
     清除某个阶段的断点，便于重新全量抓取。
     """
@@ -300,7 +345,9 @@ def clear_checkpoint(name: str, ckpt_path: str = "userdata/checkpoints.json") ->
     data = _read_json(path, default={})
     if name in data:
         data.pop(name, None)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
 
 def sanitize_filename(value: str, default: str = "file") -> str:
@@ -312,9 +359,7 @@ def sanitize_filename(value: str, default: str = "file") -> str:
     return safe or default
 
 
-def build_actor_url(
-    base_url: str, href: str, tags: Sequence[str]
-) -> str:
+def build_actor_url(base_url: str, href: str, tags: Sequence[str]) -> str:
     """
     根据标签/排序参数组合演员作品页 URL。
     """

@@ -1,6 +1,4 @@
-# crawljav
-
-基于 PyQt5 的 JavDB 收藏抓取与数据浏览工具。
+# crawljav GUI 操作教程
 
 <p><b>如果 crawljav 让您的使用更便捷，可以考虑为我买杯咖啡。这将有助于持续更新！<br>通过微信或者支付宝支持：</b></p>
   <table align="center" border="0" cellpadding="0" cellspacing="0">
@@ -16,141 +14,76 @@
     </tr>
   </table>
 
+## 1. 打开程序（发布版）
 
+### macOS
 
----
+1. 下载并解压发布包。
+2. 双击 `crawljav.app` 启动。
+3. 如遇系统安全提示，前往“系统设置 -> 隐私与安全性”中允许运行后再次打开。
 
-## 一、功能概览
+### Windows
 
-- GUI 一键流程：收藏抓取 -> 作品抓取 -> 磁链抓取 -> 磁链筛选
-- 收藏维度支持：`actor / series / maker / director / code`
-- 抓取模式：`browser`（默认，Playwright）与 `httpx`
-- 数据浏览能力：搜索、排序、筛选、批量导出、右键复制、作品编辑
-- 本地 SQLite 存储，支持断点续跑与历史记录
+1. 下载并解压发布包。
+2. 双击 `crawljav.exe` 启动。
+3. 如遇 SmartScreen 提示，点击“更多信息 -> 仍要运行”。
 
----
+说明：
 
-## 二、环境准备（Conda）
+1. 抓取模式支持 `browser`（默认）和 `httpx`。
+2. `browser` 模式依赖本机已安装 Chrome 或 Edge。
+3. `browser/httpx` 两种模式都要求可读取且有效的 `cookie.json`。
 
-```bash
-conda create -n crawljav python=3.11 -y
-conda activate crawljav
+## 2. 首次使用（设置页）
 
-# macOS / Linux
-pip install -r requirements-mac.txt
+进入“设置”页，先完成以下默认参数：
 
-# Windows
-pip install -r requirements-win.txt
-```
+1. `Cookie` 路径（通常是 `cookie.json`）。
+2. `数据库` 路径（通常是 `userdata/actors.db`）。
+3. `输出目录`（通常是 `userdata/magnets`）。
+4. `站点域名`（默认 `javdb`）。
+5. `抓取模式`（建议先用 `browser`）。
+6. 可按需设置浏览器会话目录、无头模式、超时参数。
 
-可选兼容安装：
+然后点击“保存”。
 
-```bash
-pip install -r requirements.txt
-```
+注意：
+1. 若 `cookie.json` 缺失、格式错误或关键字段无效，程序会阻断抓取启动。
+2. 会员内容（尤其部分磁链）依赖登录态 Cookie。
 
----
+## 3. 流程页操作
 
-## 三、启动 GUI
+在“流程”页按需勾选阶段并执行：
 
-```bash
-python gui.py
-```
+1. 抓取收藏列表
+2. 抓取作品列表
+3. 抓取磁链
+4. 磁链筛选
 
-首次使用建议：
+常用步骤：
 
-1. 在“设置”页配置 Cookie、数据库路径、输出目录。
-2. 抓取模式优先使用 `browser`。
-3. 如遇浏览器依赖问题，执行：
+1. 先勾选收藏与作品，完成基础数据入库。
+2. 再勾选磁链抓取与筛选，生成结果。
+3. 点击“开始”执行，日志区域实时查看进度与错误。
+4. 需要中止时点击“停止”。
 
-```bash
-python -m playwright install chromium
-```
+## 4. 数据浏览页操作
 
----
+在“数据浏览”页可进行：
 
-## 四、GUI 流程说明
+1. 按演员查看作品与磁链。
+2. 搜索、排序与筛选。
+3. 复制番号、标题、磁链。
+4. 多选作品并批量导出磁链。
+5. 编辑番号/标题并写回数据库。
 
-### 1. 流程页
+## 5. 常见问题
 
-- 勾选要执行的阶段（收藏、作品、磁链、筛选）
-- 选择收藏维度（`actor / series / maker / director / code`）
-- 点击“开始”直接执行（无二次确认弹窗）
-
-### 2. 数据浏览页
-
-- 按演员查看作品与磁链
-- 支持作品多选导出磁链
-- 支持复制番号/标题/磁链
-- 支持番号/标题编辑并写回数据库
-
-### 3. 设置页
-
-- 默认参数管理
-- Cookie 校验与保存
-- 历史记录查看
-
----
-
-## 五、代码结构（已分层）
-
-```text
-app/
-  gui/            # GUI 入口、页面、配置读写、数据视图
-  collectors/     # 收藏抓取链路与维度注册
-    dimensions/   # actor/series/maker/director/code 五维度适配
-  core/           # 配置、抓取运行时、存储、通用工具
-  exporters/      # 磁链筛选导出
-```
-
-入口说明：
-
-- 根目录只保留 `gui.py` 作为 GUI 启动入口。
-- 业务与基础能力全部在 `app/` 下开发与维护。
-
----
-
-## 六、后续模块规划（非 actor 收藏）
-
-在现有 `actor` 基础上，后续继续强化以下 4 个模块：
-
-- `series`（系列）
-- `director`（导演）
-- `maker`（片商）
-- `code`（番号）
-
-建议统一沿用 `app/collectors/` 下的同构流程：
-
-- 收藏抓取
-- 作品抓取
-- 磁链抓取
-- GUI 展示与筛选
-
----
-
-## 七、输出与数据目录
-
-```text
-userdata/
-  actors.db
-  magnets/
-  history.jsonl
-  checkpoints.json
-logs/
-  YYYY-MM-DD.log
-debug/
-  *.html / *.png
-```
-
-数据库主要表：
-
-- `actors / works / magnets`
-- `collections / collection_works / collection_magnets`
-
----
-
-## 八、注意事项
-
-- 请遵守目标站点使用条款及相关法律法规。
-- 请控制抓取频率，避免高并发或短时间高频请求。
-- `cookie.json` 为敏感文件，不要上传到公开仓库。
+1. `httpx` 模式提示 Cookie 无效：
+   检查 `cookie.json` 是否可读、是否过期。
+2. `browser` 模式也要求有效 Cookie：
+   与 `httpx` 一样，需要更新 `cookie.json` 后再启动。
+3. `browser` 模式无法启动：
+   确认本机已安装 Chrome 或 Edge。
+4. 抓取结果异常：
+   先在设置页确认站点域名和 Cookie，再重试。

@@ -9,7 +9,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, Literal, Mapping, Protocol, cast
+from typing import Any, Iterator, Literal, Mapping, Protocol, Sequence, cast
 from urllib.parse import urlparse
 
 import app.core.config as app_config
@@ -24,6 +24,7 @@ except Exception:  # pragma: no cover - 无 playwright 依赖时兜底
     sync_playwright = None
 
 FetchMode = Literal["httpx", "browser"]
+PLAYWRIGHT_COOKIE_ITEMS_KEY = "__playwright_cookie_items__"
 
 
 @dataclass
@@ -48,6 +49,7 @@ class FetchResult:
 
 
 class PageFetcher(Protocol):
+
     def fetch(
         self,
         url: str,
@@ -62,7 +64,9 @@ def add_fetch_mode_arguments(parser: argparse.ArgumentParser) -> None:
         "--fetch-mode",
         choices=["httpx", "browser"],
         default="browser",
-        help="抓取模式：browser（默认，Playwright 持久化会话）或 httpx。",
+        help=(
+            "抓取模式：browser（默认，Playwright 持久化会话）或 httpx。"
+        ),
     )
     parser.add_argument(
         "--browser-user-data-dir",
@@ -92,15 +96,23 @@ def fetch_config_from_args(args: argparse.Namespace) -> FetchConfig:
     return FetchConfig(
         mode=cast(FetchMode, getattr(args, "fetch_mode", "browser")),
         browser_user_data_dir=str(
-            getattr(args, "browser_user_data_dir", "userdata/browser_profile/javdb")
+            getattr(
+                args, "browser_user_data_dir", "userdata/browser_profile/javdb"
+            )
         ),
         browser_headless=bool(getattr(args, "browser_headless", False)),
-        browser_timeout_seconds=int(getattr(args, "browser_timeout_seconds", 30)),
-        challenge_timeout_seconds=int(getattr(args, "challenge_timeout_seconds", 180)),
+        browser_timeout_seconds=int(
+            getattr(args, "browser_timeout_seconds", 30)
+        ),
+        challenge_timeout_seconds=int(
+            getattr(args, "challenge_timeout_seconds", 180)
+        ),
     )
 
 
-def normalize_fetch_config(fetch_config: FetchConfig | Mapping[str, Any] | None) -> FetchConfig:
+def normalize_fetch_config(
+    fetch_config: FetchConfig | Mapping[str, Any] | None
+) -> FetchConfig:
     if fetch_config is None:
         return FetchConfig()
     if isinstance(fetch_config, FetchConfig):
@@ -112,13 +124,20 @@ def normalize_fetch_config(fetch_config: FetchConfig | Mapping[str, Any] | None)
     return FetchConfig(
         mode=cast(FetchMode, mode),
         browser_user_data_dir=str(
-            fetch_config.get("browser_user_data_dir", "userdata/browser_profile/javdb")
+            fetch_config.get(
+                "browser_user_data_dir", "userdata/browser_profile/javdb"
+            )
         ),
         browser_headless=bool(fetch_config.get("browser_headless", False)),
-        browser_timeout_seconds=int(fetch_config.get("browser_timeout_seconds", 30)),
-        challenge_timeout_seconds=int(fetch_config.get("challenge_timeout_seconds", 180)),
+        browser_timeout_seconds=int(
+            fetch_config.get("browser_timeout_seconds", 30)
+        ),
+        challenge_timeout_seconds=int(
+            fetch_config.get("challenge_timeout_seconds", 180)
+        ),
         browser_channel=(
-            str(fetch_config["browser_channel"]) if fetch_config.get("browser_channel") else None
+            str(fetch_config["browser_channel"])
+            if fetch_config.get("browser_channel") else None
         ),
     )
 
@@ -180,6 +199,7 @@ def _extract_final_url(response: Any, fallback_url: str) -> str:
 
 
 class HttpxPageFetcher:
+
     def __init__(self, client: Any):
         self._client = client
 
@@ -210,6 +230,7 @@ class HttpxPageFetcher:
 
 
 class PlaywrightPageFetcher:
+
     def __init__(self, *, context: Any, page: Any, config: FetchConfig):
         self._context = context
         self._page = page
@@ -289,22 +310,180 @@ class PlaywrightPageFetcher:
         return result
 
 
-def _to_playwright_cookies(cookies: Mapping[str, Any]) -> list[dict[str, Any]]:
-    host = urlparse(app_config.BASE_URL).hostname or "javdb.com"
+def _normalize_cookie_item(
+    item: Mapping[str, Any],
+    *,
+    default_host: str,
+) -> dict[str, Any] | None:
+    name = str(item.get("name", "")).strip()
+    value = item.get("value")
+    if not name or value is None:
+        return None
+
+    is_host_cookie = name.startswith("__Host-")
+    output: dict[str, Any] = {
+        "name": name,
+        "value": str(value),
+    }
+
+    url = item.get("url")
+    if url:
+        output["url"] = str(url)
+
+    domain = item.get("domain")
+    if domain and not is_host_cookie:
+        output["domain"] = str(domain)
+
+    path = item.get("path")
+    if path:
+        output["path"] = str(path)
+    elif is_host_cookie:
+        output["path"] = "/"
+
+    if "secure" in item and item.get("secure") is not None:
+        output["secure"] = bool(item.get("secure"))
+    elif is_host_cookie or name.startswith("__Secure-"):
+        output["secure"] = True
+
+    if "httpOnly" in item and item.get("httpOnly") is not None:
+        output["httpOnly"] = bool(item.get("httpOnly"))
+
+    same_site = item.get("sameSite")
+    if same_site is not None:
+        normalized_same_site = str(same_site).strip().lower()
+        if normalized_same_site == "strict":
+            output["sameSite"] = "Strict"
+        elif normalized_same_site == "lax":
+            output["sameSite"] = "Lax"
+        elif normalized_same_site == "none":
+            output["sameSite"] = "None"
+
+    expires = item.get("expires")
+    if expires is not None:
+        try:
+            output["expires"] = int(float(expires))
+        except Exception:
+            pass
+
+    if is_host_cookie:
+        output.pop("domain", None)
+        output["path"] = "/"
+        output["secure"] = True
+
+    if "url" not in output and "domain" not in output and not is_host_cookie and default_host:
+        output["domain"] = default_host
+    if "url" not in output and "path" not in output:
+        output["path"] = "/"
+    return output
+
+
+def _is_cookie_scalar_value(value: Any) -> bool:
+    return not isinstance(value, (Mapping, list, tuple, set, frozenset))
+
+
+def _normalize_playwright_cookies(
+    cookies: Mapping[str, Any] | Sequence[Mapping[str, Any]],
+    *,
+    default_host: str,
+) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
-    for key, value in cookies.items():
-        if value is None:
+    dropped = 0
+    index_by_name: dict[str, int] = {}
+
+    def _append_item(item: Mapping[str, Any]) -> None:
+        nonlocal dropped
+        normalized = _normalize_cookie_item(item, default_host=default_host)
+        if normalized is None:
+            dropped += 1
+            return
+        output.append(normalized)
+        index_by_name[normalized["name"]] = len(output) - 1
+
+    if isinstance(cookies, Mapping):
+        cookie_items = cookies.get(PLAYWRIGHT_COOKIE_ITEMS_KEY)
+        if isinstance(cookie_items, Sequence) and not isinstance(
+            cookie_items, (str, bytes, bytearray)
+        ):
+            for item in cookie_items:
+                if isinstance(item, Mapping):
+                    _append_item(item)
+                else:
+                    dropped += 1
+
+        for key, value in cookies.items():
+            if key == PLAYWRIGHT_COOKIE_ITEMS_KEY:
+                continue
+            if value is None or not _is_cookie_scalar_value(value):
+                continue
+            name = str(key).strip()
+            if not name:
+                dropped += 1
+                continue
+            normalized = _normalize_cookie_item(
+                {"name": name, "value": value},
+                default_host=default_host,
+            )
+            if normalized is None:
+                dropped += 1
+                continue
+            existing = index_by_name.get(name)
+            if existing is None:
+                output.append(normalized)
+                index_by_name[name] = len(output) - 1
+            else:
+                output[existing]["value"] = normalized["value"]
+    else:
+        for item in cookies:
+            if isinstance(item, Mapping):
+                _append_item(item)
+            else:
+                dropped += 1
+
+    if dropped:
+        LOGGER.warning("Cookie 归一化时丢弃了 %d 条无效记录。", dropped)
+    return output
+
+
+def _to_playwright_cookies(
+    cookies: Mapping[str, Any] | Sequence[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    host = (urlparse(app_config.BASE_URL).hostname or "javdb.com").strip().lower()
+    return _normalize_playwright_cookies(cookies, default_host=host)
+
+
+def _coerce_cookie_store(
+    cookies: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None
+) -> dict[str, Any]:
+    if cookies is None:
+        return {}
+    if isinstance(cookies, Mapping):
+        return dict(cookies)
+    cookie_items: list[dict[str, Any]] = []
+    cookie_dict: dict[str, Any] = {}
+    for item in cookies:
+        if not isinstance(item, Mapping):
             continue
-        output.append(
-            {
-                "name": str(key),
-                "value": str(value),
-                "domain": host,
-                "path": "/",
-                "secure": True,
-                "httpOnly": False,
-            }
-        )
+        cookie_items.append(dict(item))
+        name = str(item.get("name", "")).strip()
+        value = item.get("value")
+        if name and value is not None:
+            cookie_dict[name] = str(value)
+    if cookie_items:
+        cookie_dict[PLAYWRIGHT_COOKIE_ITEMS_KEY] = cookie_items
+    return cookie_dict
+
+
+def _extract_httpx_cookie_dict(cookie_store: Mapping[str, Any]) -> dict[str, str]:
+    output: dict[str, str] = {}
+    for key, value in cookie_store.items():
+        if key == PLAYWRIGHT_COOKIE_ITEMS_KEY:
+            continue
+        if value is None or not _is_cookie_scalar_value(value):
+            continue
+        name = str(key).strip()
+        if not name:
+            continue
+        output[name] = str(value)
     return output
 
 
@@ -338,25 +517,22 @@ def _launch_persistent_context_with_fallback(
         "user_data_dir": str(user_data_dir),
         "headless": headless,
     }
-    channels = [preferred_channel] if preferred_channel else [None, *_default_browser_channels()]
+    channels = [preferred_channel
+               ] if preferred_channel else list(_default_browser_channels())
     last_error: Exception | None = None
 
     for channel in channels:
         launch_kwargs = dict(base_kwargs)
-        if channel:
-            launch_kwargs["channel"] = channel
+        launch_kwargs["channel"] = channel
         try:
             return chromium.launch_persistent_context(**launch_kwargs)
         except Exception as exc:
             last_error = exc
-            if channel is None and not _is_missing_browser_error(exc):
-                raise
-            if channel:
-                LOGGER.warning("浏览器通道 %s 启动失败，将尝试其他通道：%s", channel, exc)
+            LOGGER.warning("浏览器通道 %s 启动失败，将尝试其他通道：%s", channel, exc)
             continue
 
     raise RuntimeError(
-        "未找到可用浏览器。请安装 Chrome/Edge，或手动执行 `playwright install chromium` 后重试。"
+        "未找到可用浏览器。请先在本机安装 Chrome 或 Edge 后重试。"
     ) from last_error
 
 
@@ -380,44 +556,57 @@ def _configure_playwright_runtime_environment() -> None:
 
 @contextmanager
 def create_fetcher(
-    cookies: Mapping[str, Any] | None,
+    cookies: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None,
     config: FetchConfig | Mapping[str, Any] | None = None,
 ) -> Iterator[PageFetcher]:
     resolved = normalize_fetch_config(config)
-    cookie_dict = dict(cookies or {})
+    cookie_store = _coerce_cookie_store(cookies)
+    httpx_cookie_dict = _extract_httpx_cookie_dict(cookie_store)
 
     if resolved.mode == "httpx":
-        with build_client(cookie_dict) as client:
+        with build_client(httpx_cookie_dict) as client:
             yield HttpxPageFetcher(client)
         return
 
-    if sync_playwright is None:
+    if resolved.mode == "browser" and sync_playwright is None:
         raise RuntimeError(
-            "浏览器模式依赖 playwright，请先安装依赖并执行: python -m playwright install chromium"
+            "浏览器模式依赖 playwright，请先安装依赖并确保本机已安装 Chrome/Edge。"
         )
 
-    _configure_playwright_runtime_environment()
+    if resolved.mode == "browser":
+        _configure_playwright_runtime_environment()
 
-    user_data_dir = Path(resolved.browser_user_data_dir)
-    user_data_dir.mkdir(parents=True, exist_ok=True)
+        user_data_dir = Path(resolved.browser_user_data_dir)
+        user_data_dir.mkdir(parents=True, exist_ok=True)
 
-    with sync_playwright() as playwright:
-        context = _launch_persistent_context_with_fallback(
-            playwright.chromium,
-            user_data_dir=user_data_dir,
-            headless=resolved.browser_headless,
-            preferred_channel=resolved.browser_channel,
-        )
-        try:
-            if cookie_dict:
-                try:
-                    context.add_cookies(_to_playwright_cookies(cookie_dict))
-                except Exception as exc:
-                    LOGGER.warning("浏览器模式注入 Cookie 失败，将继续使用现有 profile：%s", exc)
-            page = context.pages[0] if getattr(context, "pages", None) else context.new_page()
-            yield PlaywrightPageFetcher(context=context, page=page, config=resolved)
-        finally:
-            context.close()
+        with sync_playwright() as playwright:
+            context = _launch_persistent_context_with_fallback(
+                playwright.chromium,
+                user_data_dir=user_data_dir,
+                headless=resolved.browser_headless,
+                preferred_channel=resolved.browser_channel,
+            )
+            try:
+                if cookie_store:
+                    try:
+                        browser_cookies = _to_playwright_cookies(cookie_store)
+                        if browser_cookies:
+                            LOGGER.info("browser 模式注入 Cookie %d 条。", len(browser_cookies))
+                            context.add_cookies(browser_cookies)
+                        else:
+                            LOGGER.warning("browser 模式没有可注入 Cookie，将仅依赖 profile。")
+                    except Exception as exc:
+                        LOGGER.warning(
+                            "浏览器模式注入 Cookie 失败，将继续使用现有 profile：%s", exc
+                        )
+                page = context.pages[0] if getattr(context, "pages",
+                                                   None) else context.new_page()
+                yield PlaywrightPageFetcher(
+                    context=context, page=page, config=resolved
+                )
+            finally:
+                context.close()
+        return
 
 
 def log_fetch_diagnostics(mode: FetchMode, result: FetchResult) -> None:

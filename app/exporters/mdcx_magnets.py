@@ -9,7 +9,6 @@ from typing import Dict, Iterable, List, Mapping, Optional
 from app.core.storage import Storage
 from app.core.utils import sanitize_filename
 
-
 LOGGER = logging.getLogger("crawljav.mdcx_magnets")
 KEYWORDS = {"高清", "字幕"}
 SIZE_PATTERN = re.compile(r"([\d.]+)\s*GB", re.IGNORECASE)
@@ -17,10 +16,8 @@ SIZE_PATTERN = re.compile(r"([\d.]+)\s*GB", re.IGNORECASE)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "根据磁链体积和关键标签，从数据库中挑选每部作品的最佳磁链，"
-            "并写入以演员命名的 txt 文件。"
-        )
+        description=("根据磁链体积和关键标签，从数据库中挑选每部作品的最佳磁链，"
+                     "并写入以演员命名的 txt 文件。")
     )
     parser.add_argument(
         "output",
@@ -119,7 +116,9 @@ def write_output(directory: Path, magnets: Iterable[str]) -> int:
     else:
         existing = set()
 
-    new_entries = [magnet for magnet in unique_magnets if magnet not in existing]
+    new_entries = [
+        magnet for magnet in unique_magnets if magnet not in existing
+    ]
     if not new_entries:
         return 0
 
