@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crawljav"
+version = "0.0.0"
+description = "crawljav GUI crawler project"
+requires-python = ">=3.10"
+dependencies = [
+    "anyio==4.12.1",
+    "beautifulsoup4==4.14.3",
+    "bs4==0.0.2",
+    "certifi==2026.1.4",
+    "h11==0.16.0",
+    "httpcore==1.0.9",
+    "httpx==0.28.1",
+    "idna==3.11",
+    "lxml==6.0.2",
+    "playwright==1.49.0",
+    "pyqt5==5.15.11",
+    "pyqt5-sip==12.18.0",
+    "soupsieve==2.8.1",
+    "typing-extensions==4.15.0",
+    "pyqt5-qt5==5.15.2; platform_system==\"Windows\"",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pylint==4.0.4",
+    "yapf==0.43.0",
+    "tomli==2.2.1; python_version<\"3.11\"",
+]
+build = [
+    "PyInstaller==6.16.0",
+    "Pillow==11.3.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]

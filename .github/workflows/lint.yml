@@ -9,6 +9,10 @@ on:
 jobs:
   python-style:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,19 +20,24 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install ".[dev]"
 
       - name: Check YAPF formatting
         run: |
-          yapf --diff --recursive app tests gui.py \
+          python -m yapf --diff --recursive app tests gui.py \
             html-scraper/fetch_html_source.py
 
       - name: Run Pylint
         run: |
-          pylint $(find . -name "*.py" -not -path "./build/*" \
+          python -m pylint $(find . -name "*.py" -not -path "./build/*" \
             -not -path "./dist/*" -not -path "./userdata/*")
+
+      - name: Run key unit tests
+        run: |
+          python -m unittest tests.test_package_layout \
+            tests.test_release_packaging_config

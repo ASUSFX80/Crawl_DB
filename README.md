@@ -12,7 +12,18 @@
         <sub><b>Alipay</b></sub>
       </td>
     </tr>
-  </table>
+</table>
+
+## 0. 开发环境安装（源码运行）
+
+1. 创建环境：`conda create -n crawljav python=3.11 -y`
+2. 激活环境：`conda activate crawljav`
+3. 安装开发依赖：`pip install -e ".[dev]"`
+4. 启动 GUI：`python gui.py`
+
+如需执行打包流程，请额外安装：
+
+- `pip install ".[build]"`
 
 ## 1. 打开程序（发布版）
 

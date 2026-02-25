@@ -30,12 +30,10 @@ jobs:
         include:
           - os: macos-14
             target: macos-arm64
-            requirements_file: requirements-mac.txt
             data_sep: ":"
             package_ext: dmg
           - os: windows-2022
             target: windows-x64
-            requirements_file: requirements-win.txt
             data_sep: ";"
             package_ext: zip
 
@@ -51,8 +49,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r "${{ matrix.requirements_file }}"
-          python -m pip install PyInstaller Pillow
+          python -m pip install ".[build]"
 
       - name: Prepare icon (macOS)
         if: startsWith(matrix.os, 'macos')

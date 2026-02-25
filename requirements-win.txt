@@ -1,2 +1,0 @@
--r requirements-common.txt
-pyqt5-qt5==5.15.2; platform_system=="Windows"
