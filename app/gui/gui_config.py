@@ -11,11 +11,13 @@ DEFAULT_OUTPUT = Path("userdata") / "magnets"
 DEFAULT_DELAY_RANGE = "0.8-1.6"
 DEFAULT_FETCH_MODE = "browser"
 DEFAULT_COLLECT_SCOPE = "actor"
+SUPPORTED_COLLECT_SCOPES = ("actor", "series", "maker", "director", "code")
 DEFAULT_BASE_DOMAIN_SEGMENT = "javdb"
 DEFAULT_BROWSER_USER_DATA_DIR = Path("userdata") / "browser_profile" / "javdb"
 DEFAULT_BROWSER_HEADLESS = False
-DEFAULT_BROWSER_TIMEOUT_SECONDS = 30
-DEFAULT_CHALLENGE_TIMEOUT_SECONDS = 60
+DEFAULT_BROWSER_INCOGNITO = True
+DEFAULT_BROWSER_TIMEOUT_SECONDS = 60
+DEFAULT_CHALLENGE_TIMEOUT_SECONDS = 300
 
 
 def is_writable_dir(path: Path) -> bool:
@@ -75,6 +77,9 @@ def resolve_stored_path(value: str, runtime_root: Path) -> Path:
 
 
 def _normalize_collect_scope(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in SUPPORTED_COLLECT_SCOPES:
+        return normalized
     return DEFAULT_COLLECT_SCOPE
 
 
@@ -86,6 +91,10 @@ def load_ini_config(config_file: Path, runtime_root: Path) -> Dict[str, object]:
     output_dir = parser.get("paths", "output_dir", fallback=str(DEFAULT_OUTPUT))
     delay_range = parser.get("ui", "delay_range", fallback=DEFAULT_DELAY_RANGE)
     fetch_mode = parser.get("fetch", "mode", fallback=DEFAULT_FETCH_MODE)
+    has_legacy_pydoll_mode = fetch_mode == "pydoll"
+    has_legacy_pydoll_fields = parser.has_option(
+        "fetch", "pydoll_user_data_dir"
+    ) or parser.has_option("fetch", "pydoll_incognito")
     if fetch_mode not in ("httpx", "browser"):
         fetch_mode = DEFAULT_FETCH_MODE
     collect_scope = _normalize_collect_scope(
@@ -100,6 +109,11 @@ def load_ini_config(config_file: Path, runtime_root: Path) -> Dict[str, object]:
         "fetch",
         "browser_headless",
         fallback=DEFAULT_BROWSER_HEADLESS,
+    )
+    browser_incognito = parser.getboolean(
+        "fetch",
+        "browser_incognito",
+        fallback=DEFAULT_BROWSER_INCOGNITO,
     )
     browser_timeout_seconds = parser.getint(
         "fetch",
@@ -117,7 +131,7 @@ def load_ini_config(config_file: Path, runtime_root: Path) -> Dict[str, object]:
         fallback=DEFAULT_BASE_DOMAIN_SEGMENT,
     )
     migrated = parser.getboolean("meta", "migrated_from_legacy", fallback=False)
-    return {
+    loaded = {
         "cookie":
             resolve_stored_path(cookie, runtime_root),
         "db":
@@ -134,6 +148,8 @@ def load_ini_config(config_file: Path, runtime_root: Path) -> Dict[str, object]:
             resolve_stored_path(browser_user_data_dir, runtime_root),
         "browser_headless":
             browser_headless,
+        "browser_incognito":
+            browser_incognito,
         "browser_timeout_seconds":
             browser_timeout_seconds,
         "challenge_timeout_seconds":
@@ -143,6 +159,26 @@ def load_ini_config(config_file: Path, runtime_root: Path) -> Dict[str, object]:
         "migrated_from_legacy":
             migrated,
     }
+    if config_file.exists(
+    ) and (has_legacy_pydoll_mode or has_legacy_pydoll_fields):
+        save_ini_config(
+            config_file=config_file,
+            runtime_root=runtime_root,
+            cookie_path=loaded["cookie"],
+            db_path=loaded["db"],
+            output_dir=loaded["output_dir"],
+            delay_range=str(loaded["delay_range"]),
+            fetch_mode=str(loaded["fetch_mode"]),
+            collect_scope=str(loaded["collect_scope"]),
+            base_domain_segment=str(loaded["base_domain_segment"]),
+            browser_user_data_dir=loaded["browser_user_data_dir"],
+            browser_headless=bool(loaded["browser_headless"]),
+            browser_incognito=bool(loaded["browser_incognito"]),
+            browser_timeout_seconds=int(loaded["browser_timeout_seconds"]),
+            challenge_timeout_seconds=int(loaded["challenge_timeout_seconds"]),
+            migrated_from_legacy=bool(loaded["migrated_from_legacy"]),
+        )
+    return loaded
 
 
 def save_ini_config(
@@ -158,6 +194,7 @@ def save_ini_config(
     base_domain_segment: str = DEFAULT_BASE_DOMAIN_SEGMENT,
     browser_user_data_dir: Optional[Path] = None,
     browser_headless: bool = DEFAULT_BROWSER_HEADLESS,
+    browser_incognito: bool = DEFAULT_BROWSER_INCOGNITO,
     browser_timeout_seconds: int = DEFAULT_BROWSER_TIMEOUT_SECONDS,
     challenge_timeout_seconds: int = DEFAULT_CHALLENGE_TIMEOUT_SECONDS,
     migrated_from_legacy: bool = False,
@@ -183,6 +220,8 @@ def save_ini_config(
             ),
         "browser_headless":
             "true" if browser_headless else "false",
+        "browser_incognito":
+            "true" if browser_incognito else "false",
         "browser_timeout_seconds":
             str(
                 int(browser_timeout_seconds or DEFAULT_BROWSER_TIMEOUT_SECONDS)
@@ -234,6 +273,8 @@ def migrate_legacy_config_once(
              DEFAULT_BROWSER_USER_DATA_DIR).resolve(strict=False),
         "browser_headless":
             DEFAULT_BROWSER_HEADLESS,
+        "browser_incognito":
+            DEFAULT_BROWSER_INCOGNITO,
         "browser_timeout_seconds":
             DEFAULT_BROWSER_TIMEOUT_SECONDS,
         "challenge_timeout_seconds":
@@ -293,6 +334,7 @@ def migrate_legacy_config_once(
         base_domain_segment=str(defaults["base_domain_segment"]),
         browser_user_data_dir=Path(defaults["browser_user_data_dir"]),
         browser_headless=bool(defaults["browser_headless"]),
+        browser_incognito=bool(defaults["browser_incognito"]),
         browser_timeout_seconds=int(defaults["browser_timeout_seconds"]),
         challenge_timeout_seconds=int(defaults["challenge_timeout_seconds"]),
         migrated_from_legacy=True,

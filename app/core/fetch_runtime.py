@@ -5,6 +5,7 @@ import datetime as dt
 import os
 import platform
 import sys
+import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -32,8 +33,10 @@ class FetchConfig:
     mode: FetchMode = "browser"
     browser_user_data_dir: str = "userdata/browser_profile/javdb"
     browser_headless: bool = False
-    browser_timeout_seconds: int = 30
-    challenge_timeout_seconds: int = 180
+    browser_incognito: bool = False
+    delay_range: str = "0.8-1.6"
+    browser_timeout_seconds: int = 60
+    challenge_timeout_seconds: int = 300
     browser_channel: str | None = None
 
 
@@ -56,6 +59,9 @@ class PageFetcher(Protocol):
         expected_selector: str | None = None,
         stage: str | None = None,
     ) -> FetchResult:
+        ...
+
+    def export_cookie_items(self) -> list[dict[str, Any]] | None:
         ...
 
 
@@ -85,7 +91,7 @@ def add_fetch_mode_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--challenge-timeout-seconds",
         type=int,
-        default=180,
+        default=300,
         help="浏览器模式等待人工完成验证/登录的超时时间（秒）。",
     )
 
@@ -99,11 +105,13 @@ def fetch_config_from_args(args: argparse.Namespace) -> FetchConfig:
             )
         ),
         browser_headless=bool(getattr(args, "browser_headless", False)),
+        browser_incognito=False,
+        delay_range="0.8-1.6",
         browser_timeout_seconds=int(
             getattr(args, "browser_timeout_seconds", 30)
         ),
         challenge_timeout_seconds=int(
-            getattr(args, "challenge_timeout_seconds", 180)
+            getattr(args, "challenge_timeout_seconds", 300)
         ),
     )
 
@@ -127,11 +135,13 @@ def normalize_fetch_config(
             )
         ),
         browser_headless=bool(fetch_config.get("browser_headless", False)),
+        browser_incognito=bool(fetch_config.get("browser_incognito", True)),
+        delay_range=str(fetch_config.get("delay_range", "0.8-1.6")),
         browser_timeout_seconds=int(
             fetch_config.get("browser_timeout_seconds", 30)
         ),
         challenge_timeout_seconds=int(
-            fetch_config.get("challenge_timeout_seconds", 180)
+            fetch_config.get("challenge_timeout_seconds", 300)
         ),
         browser_channel=(
             str(fetch_config["browser_channel"])
@@ -144,15 +154,52 @@ def is_blocked_page(
     html: str,
     title: str,
     status_code: int | None,
+    final_url: str | None = None,
 ) -> tuple[bool, str | None]:
     if status_code == 403:
         return True, "status_403"
 
+    parsed_final_url = urlparse(str(final_url or ""))
+    login_path = parsed_final_url.path.lower()
+    if login_path == "/login" or login_path.startswith("/login/"):
+        return True, "auth_login_redirect"
+
     title_lower = title.lower()
+    security_verification_markers = (
+        "security verification",
+        "security check",
+        "verify you are human",
+        "安全验证",
+        "安全校验",
+    )
+    if any(marker in title_lower for marker in security_verification_markers):
+        return True, "challenge_security_verification_title"
+    if any(marker in title_lower for marker in ("login", "sign in")):
+        return True, "auth_login_title"
+    if "登入" in title or "登录" in title:
+        return True, "auth_login_title"
+
     if "cloudflare" in title_lower or "attention required" in title_lower:
         return True, "title_cloudflare"
 
     body_lower = html.lower()
+    security_verification_html_markers = (
+        "security verification",
+        "verify you are human",
+        "security check",
+    )
+    if any(
+        marker in body_lower for marker in security_verification_html_markers
+    ):
+        return True, "challenge_security_verification_html"
+    auth_patterns = (
+        "form action=\"/login\"",
+        "form action='/login'",
+    )
+    for marker in auth_patterns:
+        if marker in body_lower:
+            return True, f"auth_html:{marker}"
+
     patterns = (
         "cf-wrapper",
         "sorry, you have been blocked",
@@ -215,7 +262,12 @@ class HttpxPageFetcher:
         status_code = _extract_status_code(response)
         final_url = _extract_final_url(response, url)
         title = _parse_title(html)
-        blocked, reason = is_blocked_page(html, title, status_code)
+        blocked, reason = is_blocked_page(
+            html,
+            title,
+            status_code,
+            final_url=final_url,
+        )
         return FetchResult(
             requested_url=url,
             final_url=final_url,
@@ -225,6 +277,9 @@ class HttpxPageFetcher:
             blocked=blocked,
             blocked_reason=reason,
         )
+
+    def export_cookie_items(self) -> list[dict[str, Any]] | None:
+        return None
 
 
 class PlaywrightPageFetcher:
@@ -239,7 +294,12 @@ class PlaywrightPageFetcher:
         title = self._page.title()
         final_url = str(getattr(self._page, "url", requested_url))
         status_code = _extract_status_code(response)
-        blocked, reason = is_blocked_page(html, title, status_code)
+        blocked, reason = is_blocked_page(
+            html,
+            title,
+            status_code,
+            final_url=final_url,
+        )
         return FetchResult(
             requested_url=requested_url,
             final_url=final_url,
@@ -270,13 +330,22 @@ class PlaywrightPageFetcher:
         stage: str | None = None,
     ) -> FetchResult:
         ensure_not_cancelled()
-        response = self._page.goto(
-            url,
-            wait_until="domcontentloaded",
-            timeout=self._config.browser_timeout_seconds * 1000,
-        )
+        response = None
+        goto_error: Exception | None = None
+        try:
+            response = self._page.goto(
+                url,
+                wait_until="domcontentloaded",
+                timeout=self._config.browser_timeout_seconds * 1000,
+            )
+        except Exception as exc:
+            if _is_timeout_exception(exc):
+                goto_error = exc
+            else:
+                raise
         ensure_not_cancelled()
         result = self._capture_result(url, response)
+        recovered_from_challenge = False
 
         if result.blocked and expected_selector:
             LOGGER.warning(
@@ -302,10 +371,31 @@ class PlaywrightPageFetcher:
                 self._dump_debug(stage=stage, result=result)
                 return result
             result = self._capture_result(url, response=None)
+            recovered_from_challenge = not result.blocked
+
+        if (
+            goto_error is not None and not result.blocked
+            and not recovered_from_challenge
+        ):
+            self._dump_debug(stage=stage, result=result)
+            raise RuntimeError(
+                "页面加载超时（mode=browser, "
+                f"requested={url}, final={result.final_url}, "
+                f"title={result.title}, reason={result.blocked_reason}）"
+            ) from goto_error
 
         if result.blocked:
             self._dump_debug(stage=stage, result=result)
         return result
+
+    def export_cookie_items(self) -> list[dict[str, Any]] | None:
+        return None
+
+
+def _is_timeout_exception(exc: Exception) -> bool:
+    if isinstance(exc, (TimeoutError, PlaywrightTimeoutError)):
+        return True
+    return "timed out" in str(exc).lower()
 
 
 def _normalize_cookie_item(
@@ -516,11 +606,14 @@ def _launch_persistent_context_with_fallback(
     user_data_dir: Path,
     headless: bool,
     preferred_channel: str | None,
+    launch_args: Sequence[str] | None = None,
 ) -> Any:
     base_kwargs: dict[str, Any] = {
         "user_data_dir": str(user_data_dir),
         "headless": headless,
     }
+    if launch_args:
+        base_kwargs["args"] = list(launch_args)
     channels = [preferred_channel
                ] if preferred_channel else list(_default_browser_channels())
     last_error: Exception | None = None
@@ -576,41 +669,84 @@ def create_fetcher(
     if resolved.mode == "browser":
         _configure_playwright_runtime_environment()
 
-        user_data_dir = Path(resolved.browser_user_data_dir)
-        user_data_dir.mkdir(parents=True, exist_ok=True)
-
         with sync_playwright() as playwright:
-            context = _launch_persistent_context_with_fallback(
-                playwright.chromium,
-                user_data_dir=user_data_dir,
-                headless=resolved.browser_headless,
-                preferred_channel=resolved.browser_channel,
-            )
-            try:
-                if cookie_store:
+            if resolved.browser_incognito:
+                with tempfile.TemporaryDirectory(
+                    prefix="crawljav_browser_incognito_"
+                ) as temp_profile_dir:
+                    context = _launch_persistent_context_with_fallback(
+                        playwright.chromium,
+                        user_data_dir=Path(temp_profile_dir),
+                        headless=resolved.browser_headless,
+                        preferred_channel=resolved.browser_channel,
+                        launch_args=("--incognito",),
+                    )
                     try:
-                        browser_cookies = _to_playwright_cookies(cookie_store)
-                        if browser_cookies:
+                        try:
+                            browser_cookies = _to_playwright_cookies(
+                                cookie_store
+                            )
+                        except Exception as exc:
+                            raise RuntimeError(
+                                "无痕模式必须可注入有效 Cookie：Cookie 解析失败。"
+                            ) from exc
+                        if not browser_cookies:
+                            raise RuntimeError("无痕模式必须可注入有效 Cookie。")
+                        try:
                             LOGGER.info(
-                                "browser 模式注入 Cookie %d 条。",
+                                "browser 无痕模式注入 Cookie %d 条。",
                                 len(browser_cookies)
                             )
                             context.add_cookies(browser_cookies)
-                        else:
-                            LOGGER.warning(
-                                "browser 模式没有可注入 Cookie，将仅依赖 profile。"
-                            )
-                    except Exception as exc:
-                        LOGGER.warning(
-                            "浏览器模式注入 Cookie 失败，将继续使用现有 profile：%s", exc
+                        except Exception as exc:
+                            raise RuntimeError(
+                                "无痕模式必须可注入有效 Cookie：注入失败。"
+                            ) from exc
+                        page = (
+                            context.pages[0] if getattr(context, "pages", None)
+                            else context.new_page()
                         )
-                page = context.pages[0] if getattr(context, "pages",
-                                                   None) else context.new_page()
-                yield PlaywrightPageFetcher(
-                    context=context, page=page, config=resolved
+                        yield PlaywrightPageFetcher(
+                            context=context, page=page, config=resolved
+                        )
+                    finally:
+                        context.close()
+            else:
+                user_data_dir = Path(resolved.browser_user_data_dir)
+                user_data_dir.mkdir(parents=True, exist_ok=True)
+                context = _launch_persistent_context_with_fallback(
+                    playwright.chromium,
+                    user_data_dir=user_data_dir,
+                    headless=resolved.browser_headless,
+                    preferred_channel=resolved.browser_channel,
                 )
-            finally:
-                context.close()
+                try:
+                    if cookie_store:
+                        try:
+                            browser_cookies = _to_playwright_cookies(
+                                cookie_store
+                            )
+                            if browser_cookies:
+                                LOGGER.info(
+                                    "browser 模式注入 Cookie %d 条。",
+                                    len(browser_cookies)
+                                )
+                                context.add_cookies(browser_cookies)
+                            else:
+                                LOGGER.warning(
+                                    "browser 模式没有可注入 Cookie，将仅依赖 profile。"
+                                )
+                        except Exception as exc:
+                            LOGGER.warning(
+                                "浏览器模式注入 Cookie 失败，将继续使用现有 profile：%s", exc
+                            )
+                    page = context.pages[0] if getattr(context, "pages", None
+                                                      ) else context.new_page()
+                    yield PlaywrightPageFetcher(
+                        context=context, page=page, config=resolved
+                    )
+                finally:
+                    context.close()
         return
 
 

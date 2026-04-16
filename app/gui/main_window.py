@@ -11,6 +11,7 @@ from typing import Literal
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from app.collection.actors.pipeline import get_actor_pipeline
+from app.collection.pipeline import get_collection_pipeline
 from app.core.config import (
     LOGGER,
     apply_base_domain_segment,
@@ -29,6 +30,7 @@ from app.core.utils import (
 from app.exporters import mdcx_magnets
 from app.gui import data_view as gdv
 from app.gui.gui_config import (
+    DEFAULT_BROWSER_INCOGNITO,
     DEFAULT_BROWSER_TIMEOUT_SECONDS,
     DEFAULT_BROWSER_USER_DATA_DIR,
     DEFAULT_CHALLENGE_TIMEOUT_SECONDS,
@@ -38,6 +40,7 @@ from app.gui.gui_config import (
     DEFAULT_DB,
     DEFAULT_FETCH_MODE,
     DEFAULT_OUTPUT,
+    SUPPORTED_COLLECT_SCOPES,
     load_ini_config,
     migrate_legacy_config_once,
     resolve_stored_path,
@@ -89,10 +92,12 @@ class FlowWorker(QtCore.QObject):
         tags: str,
         filter_mode: Literal["actor", "code", "series"],
         filter_values: list[str],
-        collect_scope: Literal["actor"],
+        collect_scope: Literal["actor", "series", "maker", "director", "code"],
         fetch_mode: Literal["httpx", "browser"],
         browser_user_data_dir: str,
         browser_headless: bool,
+        browser_incognito: bool,
+        delay_range: str,
         browser_timeout_seconds: int,
         challenge_timeout_seconds: int,
         run_collect: bool,
@@ -112,6 +117,8 @@ class FlowWorker(QtCore.QObject):
             mode=fetch_mode,
             browser_user_data_dir=browser_user_data_dir,
             browser_headless=browser_headless,
+            browser_incognito=browser_incognito,
+            delay_range=delay_range,
             browser_timeout_seconds=browser_timeout_seconds,
             challenge_timeout_seconds=challenge_timeout_seconds,
         )
@@ -144,7 +151,10 @@ class FlowWorker(QtCore.QObject):
                 self.filter_mode,
                 ",".join(self.filter_values) if self.filter_values else "(空)",
             )
-            pipeline = get_actor_pipeline()
+            pipeline = (
+                get_actor_pipeline() if self.collect_scope == "actor" else
+                get_collection_pipeline(self.collect_scope)
+            )
             stages = []
             if self.run_collect:
                 stages.append(("collect", "抓取收藏列表", pipeline.run_collect))
@@ -222,6 +232,14 @@ class FlowWorker(QtCore.QObject):
 
 class MainWindow(QtWidgets.QMainWindow):
 
+    _BROWSE_SCOPE_LABELS = {
+        "actor": "演员",
+        "series": "系列",
+        "maker": "片商",
+        "director": "导演",
+        "code": "番号",
+    }
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("crawljav GUI")
@@ -229,12 +247,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._thread: QtCore.QThread | None = None
         self._worker: FlowWorker | None = None
-        self._actors_cache: list[str] = []
+        self._browse_item_names_cache: list[str] = []
         self._works_cache: dict[str, list[dict]] = {}
         self._magnets_cache: dict[str, dict[str, list[dict]]] = {}
         self._all_view_rows: list[gdv.WorkViewRow] = []
         self._active_view_rows: list[gdv.WorkViewRow] = []
-        self._current_actor_rows: list[gdv.WorkViewRow] = []
+        self._current_browse_item_rows: list[gdv.WorkViewRow] = []
         self._runtime_root_path = _RUNTIME_ROOT
         self._runtime_fallback_used = _RUNTIME_FALLBACK_USED
         self._active_config_file = (self._runtime_root() /
@@ -298,14 +316,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.filter_values_input = QtWidgets.QLineEdit()
         self.collect_scope_combo = QtWidgets.QComboBox()
         self.collect_scope_combo.addItem("演员", "actor")
-        self.collect_scope_combo.addItem("系列", "actor")
-        self.collect_scope_combo.addItem("片商/卖家", "actor")
-        self.collect_scope_combo.addItem("导演", "actor")
-        self.collect_scope_combo.addItem("番号", "actor")
+        self.collect_scope_combo.addItem("系列", "series")
+        self.collect_scope_combo.addItem("片商", "maker")
+        self.collect_scope_combo.addItem("导演", "director")
+        self.collect_scope_combo.addItem("番号", "code")
         self.filter_mode_combo.currentIndexChanged.connect(
             self._on_filter_mode_changed
         )
+        self.collect_scope_combo.currentIndexChanged.connect(
+            self._on_collect_scope_changed
+        )
         self._on_filter_mode_changed()
+        self._on_collect_scope_changed()
 
         config_layout.addWidget(QtWidgets.QLabel("标签"), 0, 0)
         config_layout.addWidget(self.tags_input, 0, 1, 1, 2)
@@ -399,13 +421,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.toolbar_row_filters.setSpacing(8)
         self.toolbar_row_actions = QtWidgets.QHBoxLayout()
         self.toolbar_row_actions.setSpacing(8)
+        self.browse_scope_combo = QtWidgets.QComboBox()
+        self.browse_scope_combo.addItem("演员", "actor")
+        self.browse_scope_combo.addItem("系列", "series")
+        self.browse_scope_combo.addItem("片商", "maker")
+        self.browse_scope_combo.addItem("导演", "director")
+        self.browse_scope_combo.addItem("番号", "code")
+        self.browse_scope_combo.setMinimumWidth(120)
+        self.search_label = QtWidgets.QLabel("查找")
         self.search_mode_combo = QtWidgets.QComboBox()
-        self.search_mode_combo.addItem("演员", "actor")
+        self.search_mode_combo.addItem("名称", "name")
         self.search_mode_combo.addItem("番号", "code")
         self.search_mode_combo.addItem("标题", "title")
         self.search_mode_combo.setMinimumWidth(140)
         self.search_input = QtWidgets.QLineEdit()
-        self.search_input.setPlaceholderText("输入关键词（包含匹配）")
         self.search_input.setMinimumWidth(340)
         self.search_input.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
@@ -413,10 +442,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.clear_search_btn = QtWidgets.QPushButton("清空")
         self.clear_search_btn.setObjectName("ghostButton")
 
-        self.actor_sort_combo = QtWidgets.QComboBox()
-        self.actor_sort_combo.addItem("演员 A-Z", "actor_asc")
-        self.actor_sort_combo.addItem("演员 Z-A", "actor_desc")
-        self.actor_sort_combo.setMinimumWidth(170)
+        self.name_sort_combo = QtWidgets.QComboBox()
+        self.name_sort_combo.addItem("名称 A-Z", "name_asc")
+        self.name_sort_combo.addItem("名称 Z-A", "name_desc")
+        self.name_sort_combo.setMinimumWidth(170)
         self.works_sort_combo = QtWidgets.QComboBox()
         self.works_sort_combo.addItem("番号 ↑", "code_asc")
         self.works_sort_combo.addItem("番号 ↓", "code_desc")
@@ -460,12 +489,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.save_works_btn.setEnabled(False)
 
         self.search_mode_combo.currentIndexChanged.connect(
-            lambda _: self._refresh_data_view()
+            lambda _: self._on_search_mode_changed()
+        )
+        self.browse_scope_combo.currentIndexChanged.connect(
+            lambda *_args: self._on_browse_scope_changed()
         )
         self.search_input.textChanged.connect(
             lambda _: self._refresh_data_view()
         )
-        self.actor_sort_combo.currentIndexChanged.connect(
+        self.name_sort_combo.currentIndexChanged.connect(
             lambda _: self._refresh_data_view()
         )
         self.works_sort_combo.currentIndexChanged.connect(
@@ -481,13 +513,15 @@ class MainWindow(QtWidgets.QMainWindow):
             lambda _: self._refresh_data_view()
         )
 
-        toolbar_row_top.addWidget(QtWidgets.QLabel("搜索"))
+        toolbar_row_top.addWidget(QtWidgets.QLabel("维度"))
+        toolbar_row_top.addWidget(self.browse_scope_combo)
+        toolbar_row_top.addWidget(self.search_label)
         toolbar_row_top.addWidget(self.search_mode_combo)
         toolbar_row_top.addWidget(self.search_input, stretch=1)
         toolbar_row_top.addWidget(self.clear_search_btn)
         toolbar_row_top.addStretch(1)
 
-        self.toolbar_row_filters.addWidget(self.actor_sort_combo)
+        self.toolbar_row_filters.addWidget(self.name_sort_combo)
         self.toolbar_row_filters.addWidget(self.works_sort_combo)
         self.toolbar_row_filters.addWidget(self.magnet_filter_combo)
         self.toolbar_row_filters.addWidget(self.code_filter_combo)
@@ -511,20 +545,23 @@ class MainWindow(QtWidgets.QMainWindow):
         data_layout.setContentsMargins(0, 0, 0, 0)
         data_layout.setSpacing(12)
 
-        actor_box = QtWidgets.QGroupBox("演员")
-        actor_layout = QtWidgets.QVBoxLayout(actor_box)
+        self.browse_list_box = QtWidgets.QGroupBox("演员")
+        self.browse_items_box = self.browse_list_box
+        actor_layout = QtWidgets.QVBoxLayout(self.browse_list_box)
         actor_layout.setContentsMargins(12, 12, 12, 12)
         actor_layout.setSpacing(8)
-        self.actor_list = QtWidgets.QListWidget()
-        self.actor_list.itemSelectionChanged.connect(self._on_actor_selected)
-        self.actor_list.installEventFilter(self)
-        actor_layout.addWidget(self.actor_list, stretch=1)
-        self.actor_copy_shortcut = QtWidgets.QShortcut(
-            QtGui.QKeySequence.Copy, self.actor_list
+        self.browse_item_list = QtWidgets.QListWidget()
+        self.browse_item_list.itemSelectionChanged.connect(
+            self._on_browse_item_selected
         )
-        self.actor_copy_shortcut.setContext(QtCore.Qt.WidgetShortcut)
-        self.actor_copy_shortcut.activated.connect(
-            self._copy_selected_actor_name
+        self.browse_item_list.installEventFilter(self)
+        actor_layout.addWidget(self.browse_item_list, stretch=1)
+        self.browse_item_copy_shortcut = QtWidgets.QShortcut(
+            QtGui.QKeySequence.Copy, self.browse_item_list
+        )
+        self.browse_item_copy_shortcut.setContext(QtCore.Qt.WidgetShortcut)
+        self.browse_item_copy_shortcut.activated.connect(
+            self._copy_selected_browse_item_name
         )
 
         works_box = QtWidgets.QGroupBox("作品")
@@ -619,11 +656,13 @@ class MainWindow(QtWidgets.QMainWindow):
         right_stack.addWidget(works_box, stretch=2)
         right_stack.addWidget(magnets_box, stretch=1)
 
-        data_layout.addWidget(actor_box, stretch=1)
+        data_layout.addWidget(self.browse_list_box, stretch=1)
         data_layout.addLayout(right_stack, stretch=3)
         data_outer.addLayout(data_layout, stretch=1)
 
         self.pages.addWidget(data_page)
+        self._update_search_placeholder()
+        self._update_browse_scope_ui()
 
         settings_page = QtWidgets.QWidget()
         settings_layout = QtWidgets.QHBoxLayout(settings_page)
@@ -653,14 +692,18 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.base_domain_segment_input.setPlaceholderText("例如 javdb")
         self.default_fetch_mode_combo = QtWidgets.QComboBox()
-        self.default_fetch_mode_combo.addItem(
-            "browser（默认，Playwright）", "browser"
-        )
+        self.default_fetch_mode_combo.addItem("browser", "browser")
         self.default_fetch_mode_combo.addItem("httpx", "httpx")
         self.default_browser_profile = QtWidgets.QLineEdit(
             str(DEFAULT_BROWSER_USER_DATA_DIR)
         )
+        self.default_browser_profile.setToolTip("无痕模式开启时，会话目录不会生效。")
         self.default_browser_headless_cb = QtWidgets.QCheckBox("无头模式")
+        self.default_browser_incognito_cb = QtWidgets.QCheckBox("浏览器原生无痕模式")
+        self.default_browser_incognito_cb.setChecked(DEFAULT_BROWSER_INCOGNITO)
+        self.default_browser_incognito_cb.setToolTip(
+            "开启后以浏览器原生无痕窗口运行，会话目录不会生效。"
+        )
         self.default_browser_timeout_spin = QtWidgets.QSpinBox()
         self.default_browser_timeout_spin.setRange(5, 600)
         self.default_browser_timeout_spin.setValue(
@@ -744,9 +787,11 @@ class MainWindow(QtWidgets.QMainWindow):
         browser_timeout_row.addWidget(self.default_challenge_timeout_spin)
         browser_timeout_row.addStretch(1)
         self.settings_form.addRow("浏览器超时 (s)", browser_timeout_row)
-        self.settings_form.addRow(
-            "Browser 选项", self.default_browser_headless_cb
-        )
+        browser_option_row = QtWidgets.QHBoxLayout()
+        browser_option_row.addWidget(self.default_browser_headless_cb)
+        browser_option_row.addWidget(self.default_browser_incognito_cb)
+        browser_option_row.addStretch(1)
+        self.settings_form.addRow("Browser 选项", browser_option_row)
         self.settings_form.addRow("配置文件", config_file_row)
 
         self.history_box = QtWidgets.QGroupBox("历史记录")
@@ -1109,7 +1154,9 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.default_fetch_mode_combo.currentData()
             in ("httpx", "browser") else DEFAULT_FETCH_MODE
         )
-        collect_scope = "actor"
+        collect_scope = self.collect_scope_combo.currentData()
+        if collect_scope not in SUPPORTED_COLLECT_SCOPES:
+            collect_scope = DEFAULT_COLLECT_SCOPE
         browser_user_data_dir = resolve_stored_path(
             self.default_browser_profile.text().strip()
             or str(DEFAULT_BROWSER_USER_DATA_DIR),
@@ -1129,6 +1176,7 @@ class MainWindow(QtWidgets.QMainWindow):
             collect_scope=str(collect_scope),
             browser_user_data_dir=browser_user_data_dir,
             browser_headless=self.default_browser_headless_cb.isChecked(),
+            browser_incognito=self.default_browser_incognito_cb.isChecked(),
             browser_timeout_seconds=self.default_browser_timeout_spin.value(),
             challenge_timeout_seconds=self.default_challenge_timeout_spin.value(
             ),
@@ -1155,6 +1203,9 @@ class MainWindow(QtWidgets.QMainWindow):
             )
         )
         browser_headless = bool(loaded.get("browser_headless", False))
+        browser_incognito = bool(
+            loaded.get("browser_incognito", DEFAULT_BROWSER_INCOGNITO)
+        )
         browser_timeout = int(
             loaded.get(
                 "browser_timeout_seconds", DEFAULT_BROWSER_TIMEOUT_SECONDS
@@ -1173,6 +1224,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_combo_value(self.default_fetch_mode_combo, fetch_mode)
         self.default_browser_profile.setText(str(browser_profile))
         self.default_browser_headless_cb.setChecked(browser_headless)
+        self.default_browser_incognito_cb.setChecked(browser_incognito)
         self.default_browser_timeout_spin.setValue(browser_timeout)
         self.default_challenge_timeout_spin.setValue(challenge_timeout)
         self._set_combo_value(self.collect_scope_combo, collect_scope)
@@ -1222,6 +1274,9 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _on_filter_mode_changed(self, *_args) -> None:
+        if self.collect_scope_combo.currentData() != "actor":
+            self.filter_values_input.setPlaceholderText("输入当前维度名称，多个用逗号分隔")
+            return
         mode = self._current_filter_mode()
         if mode == "actor":
             placeholder = "输入演员名，多个用逗号分隔"
@@ -1230,6 +1285,43 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             placeholder = "输入系列前缀，多个用逗号分隔（prefix）"
         self.filter_values_input.setPlaceholderText(placeholder)
+
+    def _on_collect_scope_changed(self, *_args) -> None:
+        is_actor_scope = self.collect_scope_combo.currentData() == "actor"
+        self.filter_mode_combo.setEnabled(is_actor_scope)
+        self._on_filter_mode_changed()
+
+    def _on_search_mode_changed(self, *_args) -> None:
+        self._update_search_placeholder()
+        self._refresh_data_view()
+
+    def _on_browse_scope_changed(self, *_args) -> None:
+        self._update_browse_scope_ui()
+        self._update_search_placeholder()
+        self._load_data()
+
+    def _update_browse_scope_ui(self) -> None:
+        self.browse_list_box.setTitle(
+            self._browse_scope_label(self._current_browse_scope())
+        )
+
+    def _update_search_placeholder(self) -> None:
+        browse_scope = self._current_browse_scope()
+        search_mode = self._current_search_mode()
+        if search_mode == "code":
+            placeholder = "输入番号"
+        elif search_mode == "title":
+            placeholder = "输入标题关键词"
+        else:
+            name_placeholders = {
+                "actor": "输入演员名",
+                "series": "输入系列名",
+                "maker": "输入片商名",
+                "director": "输入导演名",
+                "code": "输入番号收藏项名",
+            }
+            placeholder = name_placeholders.get(browse_scope, "输入名称")
+        self.search_input.setPlaceholderText(placeholder)
 
     def _current_filter_mode(self) -> Literal["actor", "code", "series"]:
         mode = self.filter_mode_combo.currentData()
@@ -1303,7 +1395,9 @@ class MainWindow(QtWidgets.QMainWindow):
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self, "配置错误", f"站点域名无效：{exc}")
             return
-        collect_scope = "actor"
+        collect_scope = self.collect_scope_combo.currentData()
+        if collect_scope not in SUPPORTED_COLLECT_SCOPES:
+            collect_scope = DEFAULT_COLLECT_SCOPE
         if not cookie_path:
             QtWidgets.QMessageBox.warning(self, "缺少参数", "需要填写 Cookie 路径。")
             return
@@ -1348,9 +1442,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
             ),
             browser_headless=self.default_browser_headless_cb.isChecked(),
+            browser_incognito=self.default_browser_incognito_cb.isChecked(),
             browser_timeout_seconds=self.default_browser_timeout_spin.value(),
             challenge_timeout_seconds=self.default_challenge_timeout_spin.value(
             ),
+            delay_range=self.delay_range.text().strip() or "0.8-1.6",
             run_collect=self.collect_cb.isChecked(),
             run_works=self.works_cb.isChecked(),
             run_magnets=self.magnets_cb.isChecked(),
@@ -1504,24 +1600,39 @@ class MainWindow(QtWidgets.QMainWindow):
             self._runtime_root()
         )
         self.default_db.setText(str(path))
-        self._actors_cache = []
+        browse_scope = self._current_browse_scope()
+        self._browse_item_names_cache = []
         self._works_cache = {}
         self._magnets_cache = {}
         self._all_view_rows = []
         self._active_view_rows = []
-        self.actor_list.clear()
+        self.browse_item_list.clear()
         self.works_table.setRowCount(0)
         self.magnets_table.setRowCount(0)
-        self.result_count_label.setText("演员: 0 | 作品: 0")
+        self.result_count_label.setText(
+            f"{self._browse_scope_label(browse_scope)}: 0 | 作品: 0"
+        )
         if not path.exists():
-            self._populate_actor_list([])
+            self._populate_browse_item_list([])
             return
         try:
             with Storage(path) as store:
-                actors = store.iter_actor_urls()
-                self._actors_cache = [name for name, _ in actors]
-                self._works_cache = store.get_all_actor_works()
-                self._magnets_cache = store.get_magnets_grouped()
+                if browse_scope == "actor":
+                    actors = store.iter_actor_urls()
+                    self._browse_item_names_cache = [name for name, _ in actors]
+                    self._works_cache = store.get_all_actor_works()
+                    self._magnets_cache = store.get_magnets_grouped()
+                else:
+                    collections = store.iter_collections(browse_scope)
+                    self._browse_item_names_cache = [
+                        name for name, _ in collections
+                    ]
+                    self._works_cache = store.get_all_collection_works(
+                        browse_scope
+                    )
+                    self._magnets_cache = store.get_collection_magnets_grouped(
+                        browse_scope
+                    )
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("读取数据库失败: %s", exc)
             QtWidgets.QMessageBox.warning(self, "数据库错误", f"读取数据库失败：{exc}")
@@ -1537,11 +1648,11 @@ class MainWindow(QtWidgets.QMainWindow):
             row["has_subtitle"] = self._has_subtitle_code(code)
         return rows
 
-    def _current_search_mode(self) -> Literal["actor", "code", "title"]:
+    def _current_search_mode(self) -> Literal["name", "code", "title"]:
         mode = self.search_mode_combo.currentData()
-        if mode in ("actor", "code", "title"):
+        if mode in ("name", "code", "title"):
             return mode
-        return "actor"
+        return "name"
 
     def _is_uncensored_code(self, code: str) -> bool:
         return "-U" in code.upper()
@@ -1565,73 +1676,86 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _refresh_data_view(self, reset_actor: bool = False) -> None:
-        current_actor = "" if reset_actor else self._current_actor_name()
-        self._active_view_rows = self._apply_data_filters(self._all_view_rows)
-        actor_desc = (
-            self.actor_sort_combo.currentData() or "actor_asc"
-        ) == "actor_desc"
-        actor_names = gdv.sort_actor_names(
-            self._active_view_rows, desc=actor_desc
+        current_item_name = "" if reset_actor else self._current_browse_item_name(
         )
-        empty_text = "暂无演员数据。" if not self._all_view_rows else "无匹配结果。"
-        self._populate_actor_list(actor_names, empty_text=empty_text)
+        browse_scope = self._current_browse_scope()
+        self._active_view_rows = self._apply_data_filters(self._all_view_rows)
+        name_desc = (
+            self.name_sort_combo.currentData() or "name_asc"
+        ) == "name_desc"
+        item_names = gdv.sort_item_names(self._active_view_rows, desc=name_desc)
+        empty_label = self._browse_scope_label(browse_scope)
+        empty_text = (
+            f"暂无{empty_label}数据。" if not self._all_view_rows else "无匹配结果。"
+        )
+        self._populate_browse_item_list(item_names, empty_text=empty_text)
 
-        if not actor_names:
-            self._current_actor_rows = []
+        if not item_names:
+            self._current_browse_item_rows = []
             self.works_table.setRowCount(0)
             self.magnets_table.setRowCount(0)
-            self.result_count_label.setText("演员: 0 | 作品: 0")
+            self.result_count_label.setText(f"{empty_label}: 0 | 作品: 0")
             return
 
-        actor_to_select = (
-            current_actor if current_actor in actor_names else actor_names[0]
+        item_to_select = (
+            current_item_name
+            if current_item_name in item_names else item_names[0]
         )
-        self._select_actor_by_name(actor_to_select)
+        self._select_browse_item_by_name(item_to_select)
         self.result_count_label.setText(
-            f"演员: {len(actor_names)} | 作品: {len(self._active_view_rows)}"
+            f"{empty_label}: {len(item_names)} | 作品: {len(self._active_view_rows)}"
         )
 
-    def _select_actor_by_name(self, actor_name: str) -> None:
-        for row in range(self.actor_list.count()):
-            item = self.actor_list.item(row)
-            if item and item.text() == actor_name:
-                self.actor_list.setCurrentRow(row)
+    def _current_browse_scope(self) -> str:
+        scope = self.browse_scope_combo.currentData()
+        if scope in ("actor", "series", "maker", "director", "code"):
+            return str(scope)
+        return "actor"
+
+    def _browse_scope_label(self, scope: str) -> str:
+        return self._BROWSE_SCOPE_LABELS.get(scope, "演员")
+
+    def _select_browse_item_by_name(self, item_name: str) -> None:
+        for row in range(self.browse_item_list.count()):
+            item = self.browse_item_list.item(row)
+            if item and item.text() == item_name:
+                self.browse_item_list.setCurrentRow(row)
                 return
 
-    def _current_actor_name(self) -> str:
-        items = self.actor_list.selectedItems()
+    def _current_browse_item_name(self) -> str:
+        items = self.browse_item_list.selectedItems()
         if not items:
             return ""
         return items[0].text()
 
-    def _populate_actor_list(
+    def _populate_browse_item_list(
         self, names: list[str], empty_text: str = "暂无演员数据。"
     ) -> None:
-        self.actor_list.clear()
+        self.browse_item_list.clear()
         if not names:
-            self.actor_list.addItem(empty_text)
+            self.browse_item_list.addItem(empty_text)
             return
         for name in names:
-            self.actor_list.addItem(name)
+            self.browse_item_list.addItem(name)
 
-    def _on_actor_selected(self) -> None:
-        items = self.actor_list.selectedItems()
+    def _on_browse_item_selected(self) -> None:
+        items = self.browse_item_list.selectedItems()
         if not items:
             return
-        actor_name = items[0].text()
-        if actor_name in ("暂无演员数据。", "无匹配结果。"):
-            self._current_actor_rows = []
+        item_name = items[0].text()
+        if item_name in ("暂无演员数据。", "无匹配结果。"):
+            self._current_browse_item_rows = []
             return
         works_rows = [
-            row for row in self._active_view_rows if row["actor"] == actor_name
+            row for row in self._active_view_rows if row["name"] == item_name
         ]
         works_sort = self.works_sort_combo.currentData() or "code_asc"
         work_key: gdv.WorkSortKey = (
             "code" if str(works_sort).startswith("code_") else "title"
         )
         desc = str(works_sort).endswith("_desc")
-        sorted_rows = gdv.sort_actor_works(works_rows, key=work_key, desc=desc)
-        self._current_actor_rows = sorted_rows
+        sorted_rows = gdv.sort_item_rows(works_rows, key=work_key, desc=desc)
+        self._current_browse_item_rows = sorted_rows
         works = [{
             "code": row["code"],
             "title": row["title"],
@@ -1687,16 +1811,16 @@ class MainWindow(QtWidgets.QMainWindow):
         })
         rows: list[gdv.WorkViewRow] = []
         for row_index in selected_indexes:
-            if 0 <= row_index < len(self._current_actor_rows):
-                rows.append(self._current_actor_rows[row_index])
+            if 0 <= row_index < len(self._current_browse_item_rows):
+                rows.append(self._current_browse_item_rows[row_index])
         return rows
 
     def _on_work_selected(self) -> None:
-        items = self.actor_list.selectedItems()
+        items = self.browse_item_list.selectedItems()
         if not items:
             return
-        actor_name = items[0].text()
-        if actor_name not in self._magnets_cache:
+        item_name = items[0].text()
+        if item_name not in self._magnets_cache:
             self.magnets_table.setRowCount(0)
             return
         selected = self.works_table.selectedItems()
@@ -1709,7 +1833,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not code_item:
             return
         code = code_item.text()
-        magnets = self._magnets_cache.get(actor_name, {}).get(code, [])
+        magnets = self._magnets_cache.get(item_name, {}).get(code, [])
         self._populate_magnets_table(magnets)
 
     def _on_works_context_menu(self, pos: QtCore.QPoint) -> None:
@@ -1732,8 +1856,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._copy_selected_works("magnet")
 
     def _copy_selected_works(self, kind: gdv.CopyKind) -> None:
-        actor_name = self._current_actor_name()
-        actor_magnets = self._magnets_cache.get(actor_name, {})
+        item_name = self._current_browse_item_name()
+        actor_magnets = self._magnets_cache.get(item_name, {})
         text = gdv.build_copy_text(
             kind, self._selected_work_rows(), actor_magnets
         )
@@ -1765,21 +1889,21 @@ class MainWindow(QtWidgets.QMainWindow):
             lines.append(line)
         QtWidgets.QApplication.clipboard().setText("\n".join(lines))
 
-    def _copy_selected_actor_name(self) -> None:
-        items = self.actor_list.selectedItems()
+    def _copy_selected_browse_item_name(self) -> None:
+        items = self.browse_item_list.selectedItems()
         if not items:
             return
-        actor_name = items[0].text()
-        if actor_name in ("暂无演员数据。", "无匹配结果。"):
+        item_name = items[0].text()
+        if item_name in ("暂无演员数据。", "无匹配结果。"):
             return
-        QtWidgets.QApplication.clipboard().setText(actor_name)
+        QtWidgets.QApplication.clipboard().setText(item_name)
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
         if event.type(
         ) == QtCore.QEvent.KeyPress and isinstance(event, QtGui.QKeyEvent):
             if event.matches(QtGui.QKeySequence.Copy):
-                if obj is self.actor_list:
-                    self._copy_selected_actor_name()
+                if obj is self.browse_item_list:
+                    self._copy_selected_browse_item_name()
                     return True
                 if obj is self.works_table:
                     self._copy_selected_table_cells(self.works_table)
@@ -1791,17 +1915,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_works_edit_toggled(self, checked: bool) -> None:
         self.save_works_btn.setEnabled(checked)
-        self._on_actor_selected()
+        self._on_browse_item_selected()
 
     def _save_works_edits(self) -> None:
         if not self.works_edit_cb.isChecked():
             return
-        actor_name = self._current_actor_name()
-        if not actor_name:
+        item_name = self._current_browse_item_name()
+        if not item_name:
             return
         pending_changes: list[tuple[str, str, str]] = []
         for row_index in range(self.works_table.rowCount()):
-            original = self._current_actor_rows[row_index]
+            original = self._current_browse_item_rows[row_index]
             code_item = self.works_table.item(row_index, 0)
             title_item = self.works_table.item(row_index, 1)
             if not code_item or not title_item:
@@ -1826,7 +1950,7 @@ class MainWindow(QtWidgets.QMainWindow):
             with Storage(str(db_path_obj)) as store:
                 for old_code, new_code, new_title in pending_changes:
                     updated = store.update_work_fields(
-                        actor_name=actor_name,
+                        actor_name=item_name,
                         old_code=old_code,
                         new_code=new_code,
                         new_title=new_title,
@@ -1835,11 +1959,11 @@ class MainWindow(QtWidgets.QMainWindow):
                         raise ValueError(f"未找到作品：{old_code}")
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self, "保存失败", str(exc))
-            self._on_actor_selected()
+            self._on_browse_item_selected()
             return
         except Exception as exc:  # noqa: BLE001
             QtWidgets.QMessageBox.warning(self, "保存失败", f"写入数据库失败：{exc}")
-            self._on_actor_selected()
+            self._on_browse_item_selected()
             return
 
         QtWidgets.QMessageBox.information(
@@ -1880,8 +2004,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if not selected_rows:
             QtWidgets.QMessageBox.information(self, "提示", "请先选择作品。")
             return
-        actor_name = self._current_actor_name()
-        actor_magnets = self._magnets_cache.get(actor_name, {})
+        item_name = self._current_browse_item_name()
+        actor_magnets = self._magnets_cache.get(item_name, {})
         if len(selected_rows) == 1:
             code = selected_rows[0]["code"].strip() or "magnets"
             magnets = actor_magnets.get(code, [])

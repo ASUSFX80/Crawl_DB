@@ -18,6 +18,7 @@ from app.core.utils import (
     ensure_not_cancelled,
     load_checkpoint,
     load_cookie_dict,
+    parse_delay_range,
     record_history,
     save_checkpoint,
     sleep_with_cancel,
@@ -191,6 +192,15 @@ def _apply_work_filters(
     return all_works
 
 
+def _load_cookies_for_mode(
+    *,
+    cookie_json: str,
+    fetch_mode: str,
+) -> dict[str, str]:
+    del fetch_mode
+    return load_cookie_dict(cookie_json)
+
+
 def run_magnet_jobs(
     out_root: str = "userdata/magnets",
     cookie_json: str = "cookie.json",
@@ -204,7 +214,11 @@ def run_magnet_jobs(
     遍历数据库中的作品，抓取磁链并存入 SQLite 数据库文件。
     """
     resolved_fetch_config = normalize_fetch_config(fetch_config)
-    cookies = load_cookie_dict(cookie_json)
+    cookies = _load_cookies_for_mode(
+        cookie_json=cookie_json,
+        fetch_mode=resolved_fetch_config.mode,
+    )
+    delay_low, delay_high = parse_delay_range(resolved_fetch_config.delay_range)
 
     if out_root != "userdata/magnets":
         LOGGER.debug("out_root 参数仅用于 TXT 导出，与数据库写入无关：%s", out_root)
@@ -256,12 +270,19 @@ def run_magnet_jobs(
             resume_actor = ckpt.get("actor")
             resume_index = int(ckpt.get("index", 0) or 0)
             if resume_actor:
-                LOGGER.info(
-                    "检测到断点，将从演员 %s 的第 %d 条作品继续。",
-                    resume_actor,
-                    resume_index + 1,
-                )
-
+                if resume_actor not in all_works:
+                    LOGGER.warning(
+                        "断点演员 %s 不在当前任务内，将忽略旧断点并从头开始。",
+                        resume_actor,
+                    )
+                    resume_actor = None
+                    resume_index = 0
+                else:
+                    LOGGER.info(
+                        "检测到断点，将从演员 %s 的第 %d 条作品继续。",
+                        resume_actor,
+                        resume_index + 1,
+                    )
         summary = {}
         with create_fetcher(cookies, resolved_fetch_config) as fetcher:
             actor_items = sorted(
@@ -309,7 +330,7 @@ def run_magnet_jobs(
                             len(magnets),
                         )
                         magnet_counts.append(saved)
-                        sleep_with_cancel(random.uniform(0.8, 1.6))
+                        sleep_with_cancel(random.uniform(delay_low, delay_high))
                     except RuntimeError:
                         raise
                     except Exception as e:

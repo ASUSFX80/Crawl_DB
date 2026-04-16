@@ -22,6 +22,7 @@ from app.core.utils import (
     find_next_url,
     load_checkpoint,
     load_cookie_dict,
+    parse_delay_range,
     record_history,
     save_checkpoint,
     sleep_with_cancel,
@@ -31,6 +32,15 @@ from app.core.storage import Storage
 
 def _base_url() -> str:
     return app_config.BASE_URL
+
+
+def _load_cookies_for_mode(
+    *,
+    cookie_json: str,
+    fetch_mode: str,
+) -> dict[str, str]:
+    del fetch_mode
+    return load_cookie_dict(cookie_json)
 
 
 def parse_works(html: str):
@@ -83,7 +93,11 @@ def crawl_actor_works(
     """
     known_codes = known_codes or set()
     resolved_fetch_config = normalize_fetch_config(fetch_config)
-    cookies = load_cookie_dict(cookie_json)
+    cookies = _load_cookies_for_mode(
+        cookie_json=cookie_json,
+        fetch_mode=resolved_fetch_config.mode,
+    )
+    delay_low, delay_high = parse_delay_range(resolved_fetch_config.delay_range)
 
     rows, page, url = [], 1, start_url
     with create_fetcher(cookies, resolved_fetch_config) as fetcher:
@@ -118,7 +132,7 @@ def crawl_actor_works(
             if nxt and nxt != url:
                 url = nxt
                 page += 1
-                sleep_with_cancel(random.uniform(0.8, 1.6))
+                sleep_with_cancel(random.uniform(delay_low, delay_high))
             else:
                 url = None
     LOGGER.info("抓取演员作品完成，共 %d 条。", len(rows))

@@ -53,6 +53,42 @@ def sleep_with_cancel(seconds: float, *, step_seconds: float = 0.1) -> None:
         time.sleep(min(step, remaining))
 
 
+def parse_delay_range(
+    value: str,
+    default: tuple[float, float] = (0.8, 1.6),
+) -> tuple[float, float]:
+    """
+    解析延时范围字符串，返回 (min_seconds, max_seconds)。
+    支持格式：\"min-max\"；非法输入回退 default。
+    """
+    default_min = float(default[0])
+    default_max = float(default[1])
+    if default_min > default_max:
+        default_min, default_max = default_max, default_min
+
+    raw = str(value or "").strip().replace(" ", "")
+    if not raw:
+        return (default_min, default_max)
+
+    parts = raw.split("-", 1)
+    if len(parts) != 2:
+        _get_logger().warning("延时范围格式无效，已回退默认值：%s", value)
+        return (default_min, default_max)
+    try:
+        low = float(parts[0])
+        high = float(parts[1])
+    except (TypeError, ValueError):
+        _get_logger().warning("延时范围格式无效，已回退默认值：%s", value)
+        return (default_min, default_max)
+
+    if low < 0 or high < 0:
+        _get_logger().warning("延时范围不能为负数，已回退默认值：%s", value)
+        return (default_min, default_max)
+    if low > high:
+        low, high = high, low
+    return (low, high)
+
+
 def _get_logger():
     from app.core.config import LOGGER
 
@@ -135,18 +171,19 @@ def load_cookie_dict(cookie_json_path: str = "cookie.json") -> Dict[str, Any]:
     except Exception as exc:
         raise SystemExit(f"读取 Cookie 文件失败：{cookie_json_path}（{exc}）")
 
-    if isinstance(data, dict
-                 ) and "cookie" in data and isinstance(data["cookie"], str):
-        cookies = parse_cookie_string(data["cookie"])
-    elif (
-        isinstance(data, dict) and "cookies" in data
-        and isinstance(data["cookies"], list)
-    ):
+    if isinstance(data, dict) and "cookies" in data:
+        if not isinstance(data["cookies"], list):
+            raise SystemExit(
+                f"Cookie 文件格式无效，期望 cookies 为对象数组：{cookie_json_path}"
+            )
         cookie_items = [
             item for item in data["cookies"] if isinstance(item, dict)
         ]
         cookies = _cookie_items_to_name_value_dict(cookie_items)
         cookies[PLAYWRIGHT_COOKIE_ITEMS_KEY] = cookie_items
+    elif isinstance(data, dict
+                   ) and "cookie" in data and isinstance(data["cookie"], str):
+        cookies = parse_cookie_string(data["cookie"])
     elif isinstance(data, list):
         cookie_items = [item for item in data if isinstance(item, dict)]
         if len(cookie_items) != len(data):
@@ -177,6 +214,55 @@ def _cookie_items_to_name_value_dict(
             continue
         cookies[name] = str(value)
     return cookies
+
+
+def save_cookie_items(
+    cookie_json_path: str,
+    cookie_items: Sequence[Dict[str, Any]],
+) -> None:
+    """将浏览器导出的 Cookie 列表写回 cookie.json。"""
+    normalized_items: list[dict[str, Any]] = []
+    for item in cookie_items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        value = item.get("value")
+        if not name or value is None:
+            continue
+
+        normalized: dict[str, Any] = {
+            "name": name,
+            "value": str(value),
+        }
+        for key in ("domain", "path", "url", "sameSite"):
+            raw_value = item.get(key)
+            if raw_value is None or raw_value == "":
+                continue
+            normalized[key] = str(raw_value)
+        for key in ("secure", "httpOnly", "sameParty"):
+            if key in item and item.get(key) is not None:
+                normalized[key] = bool(item.get(key))
+        if "expires" in item and item.get("expires") is not None:
+            try:
+                normalized["expires"] = int(float(item.get("expires")))
+            except Exception:  # pragma: no cover - 安全兜底
+                pass
+        normalized_items.append(normalized)
+
+    cookie_line = "; ".join(
+        f"{item['name']}={item['value']}" for item in normalized_items
+    )
+    payload = {
+        "cookie": cookie_line,
+        "cookies": normalized_items,
+    }
+
+    path = Path(cookie_json_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def log_cookie_staleness(cookie_json_path: str, warn_days: int = 3) -> None:

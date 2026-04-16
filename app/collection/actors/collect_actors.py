@@ -24,6 +24,7 @@ from app.core.utils import (
     ensure_not_cancelled,
     find_next_url,
     load_cookie_dict,
+    parse_delay_range,
     sleep_with_cancel,
 )
 
@@ -71,7 +72,11 @@ def _parse_actor_box(box: Tag) -> Optional[dict[str, str]]:
                           ) if strong else anchor.get_text(strip=True)
     if not href or not name:
         return None
-    return {"href": href, "strong": name}
+    return {
+        "href": href,
+        "title": name,
+        "strong": name,
+    }
 
 
 def _parse_actors_from_soup(soup: BeautifulSoup) -> list[dict[str, str]]:
@@ -83,6 +88,15 @@ def _parse_actors_from_soup(soup: BeautifulSoup) -> list[dict[str, str]]:
         if record:
             items.append(record)
     return items
+
+
+def _load_cookies_for_mode(
+    *,
+    cookie_json: str,
+    fetch_mode: str,
+) -> dict[str, str]:
+    del fetch_mode
+    return load_cookie_dict(cookie_json)
 
 
 def _save_response_dump(html: str, response_dump_path: Optional[str]) -> None:
@@ -133,7 +147,11 @@ def crawl_all_pages(
 ):
     del collect_scope
     resolved_fetch_config = normalize_fetch_config(fetch_config)
-    cookies = load_cookie_dict(cookie_json)
+    cookies = _load_cookies_for_mode(
+        cookie_json=cookie_json,
+        fetch_mode=resolved_fetch_config.mode,
+    )
+    delay_low, delay_high = parse_delay_range(resolved_fetch_config.delay_range)
 
     items: list[dict[str, str]] = []
     seen_hrefs: set[str] = set()
@@ -186,7 +204,7 @@ def crawl_all_pages(
             if next_url and next_url != url:
                 url = next_url
                 page += 1
-                sleep_with_cancel(random.uniform(0.8, 1.6))
+                sleep_with_cancel(random.uniform(delay_low, delay_high))
             else:
                 url = None
     LOGGER.info("爬取收藏演员完成，共 %d 条。", len(items))

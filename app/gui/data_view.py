@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, Mapping, Sequence, TypedDict
 
-SearchMode = Literal["actor", "code", "title"]
+SearchMode = Literal["name", "code", "title"]
 MagnetState = Literal["all", "with", "without"]
 CodeState = Literal["all", "coded", "uncensored"]
 SubtitleState = Literal["all", "subtitle", "no_subtitle"]
@@ -11,7 +11,7 @@ CopyKind = Literal["code", "title", "magnet"]
 
 
 class WorkViewRow(TypedDict):
-    actor: str
+    name: str
     code: str
     title: str
     href: str
@@ -37,19 +37,19 @@ def build_rows(
     magnets_cache: dict[str, dict[str, list[dict]]],
 ) -> list[WorkViewRow]:
     rows: list[WorkViewRow] = []
-    for actor in sorted(works_cache.keys(), key=lambda item: item.lower()):
-        actor_magnets = magnets_cache.get(actor, {})
-        for work in works_cache.get(actor, []):
+    for item_name in sorted(works_cache.keys(), key=lambda item: item.lower()):
+        item_magnets = magnets_cache.get(item_name, {})
+        for work in works_cache.get(item_name, []):
             code = str(work.get("code", "")).strip()
             title = str(work.get("title", "")).strip()
             href = str(work.get("href", "")).strip()
             upper_code = code.upper()
             rows.append({
-                "actor": actor,
+                "name": item_name,
                 "code": code,
                 "title": title,
                 "href": href,
-                "has_magnets": bool(actor_magnets.get(code)),
+                "has_magnets": bool(item_magnets.get(code)),
                 "is_uncensored": "-U" in upper_code,
                 "has_subtitle": "-C" in upper_code,
             })
@@ -89,12 +89,12 @@ def filter_rows(
     return filtered
 
 
-def sort_actor_names(rows: list[WorkViewRow], desc: bool = False) -> list[str]:
-    names = {row["actor"] for row in rows}
+def sort_item_names(rows: list[WorkViewRow], desc: bool = False) -> list[str]:
+    names = {row["name"] for row in rows}
     return sorted(names, key=lambda item: item.lower(), reverse=desc)
 
 
-def sort_actor_works(
+def sort_item_rows(
     rows: list[WorkViewRow],
     *,
     key: WorkSortKey,

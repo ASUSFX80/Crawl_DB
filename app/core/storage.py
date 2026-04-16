@@ -561,6 +561,42 @@ class Storage(AbstractContextManager["Storage"]):
         ).fetchone()
         return str(row["href"]) if row and row["href"] is not None else None
 
+    def get_collection_magnets_grouped(
+        self, scope: str
+    ) -> Dict[str, Dict[str, List[Dict[str, str]]]]:
+        normalized_scope = normalize_collect_scope(scope)
+        cur = self.conn.execute(
+            """
+            SELECT
+                c.name AS collection_name,
+                cw.code,
+                COALESCE(cw.title, '') AS title,
+                COALESCE(cw.href, '') AS href,
+                cm.magnet,
+                COALESCE(cm.tags, '') AS tags,
+                COALESCE(cm.size, '') AS size
+            FROM collection_magnets cm
+            JOIN collection_works cw ON cw.id = cm.collection_work_id
+            JOIN collections c ON c.id = cw.collection_id
+            WHERE c.scope = ?
+            ORDER BY LOWER(c.name), cw.code
+            """,
+            (normalized_scope,),
+        )
+
+        grouped: Dict[str, Dict[str, List[Dict[str, str]]]] = {}
+        for row in cur:
+            collection_bucket = grouped.setdefault(row["collection_name"], {})
+            work_bucket = collection_bucket.setdefault(row["code"], [])
+            work_bucket.append({
+                "magnet": row["magnet"],
+                "tags": row["tags"],
+                "size": row["size"],
+                "title": row["title"],
+                "href": row["href"],
+            })
+        return grouped
+
     def save_collection_magnets(
         self,
         scope: str,
