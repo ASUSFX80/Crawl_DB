@@ -1,19 +1,5 @@
 # crawljav GUI 操作教程
 
-<p><b>如果 crawljav 让您的使用更便捷，可以考虑为我买杯咖啡。这将有助于持续更新！<br>通过微信或者支付宝支持：</b></p>
-  <table align="center" border="0" cellpadding="0" cellspacing="0">
-    <tr>
-      <td align="center">
-        <img src="docs/assets/wechat-sponsor.png" alt="WeChat Pay" height="160"><br>
-        <sub><b>WeChat Pay</b></sub>
-      </td>
-      <td align="center">
-        <img src="docs/assets/alipay-sponsor.png" alt="Alipay" height="160"><br>
-        <sub><b>Alipay</b></sub>
-      </td>
-    </tr>
-</table>
-
 ## 0. 开发环境安装（源码运行）
 
 1. 创建环境：`conda create -n crawljav python=3.11 -y`
