@@ -16,6 +16,7 @@ dependencies = [
     "httpcore==1.0.9",
     "httpx==0.28.1",
     "idna==3.11",
+    "javdb-magnet",
     "lxml==6.0.2",
     "playwright==1.49.0",
     "pyqt5==5.15.11",
